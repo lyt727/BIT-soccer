@@ -1,0 +1,6 @@
+# 把 DOMAIN 换成你的域名，例如 soccer.example.com
+# 域名解析到服务器 IP 后，Caddy 会自动申请 HTTPS 证书
+{$DOMAIN} {
+	encode gzip
+	reverse_proxy web:3000
+}

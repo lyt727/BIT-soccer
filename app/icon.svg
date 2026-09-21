@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0f9d58"/>
+      <stop offset="1" stop-color="#075e32"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="28" fill="url(#g)"/>
+  <circle cx="64" cy="66" r="34" fill="#fff"/>
+  <path d="M64 40c-14 0-26 10-30 24h60C90 50 78 40 64 40z" fill="#f2c94c"/>
+  <path d="M42 52l7 3-4 6-7-2zM86 52l-7 3 4 6 7-2z" fill="#333"/>
+  <path d="M52 44l3 6-6 3-2-6zM76 44l-3 6 6 3 2-6z" fill="#333"/>
+  <path d="M64 34v14M40 70c8-7 40-7 48 0" stroke="#0b7a43" stroke-width="4" fill="none" stroke-linecap="round"/>
+  <text x="64" y="108" text-anchor="middle" font-family="Arial, sans-serif" font-size="26" font-weight="bold" fill="#0b7a43">BIT</text>
+</svg>

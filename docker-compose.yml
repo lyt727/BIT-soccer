@@ -1,0 +1,39 @@
+services:
+  web:
+    build: .
+    image: greensinbit:latest
+    container_name: greensinbit
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      PORT: 3000
+      DB_DRIVER: ${DB_DRIVER:-sqlite}
+      DATABASE_URL: ${DATABASE_URL:-}
+    ports:
+      - "${PUBLIC_PORT:-3000}:3000"
+    volumes:
+      - ./data:/app/server/data
+
+  # 可选：自动申请 HTTPS 证书（需要域名解析到服务器 IP）
+  # 启动方式：docker compose --profile https up -d --build
+  caddy:
+    image: caddy:2-alpine
+    container_name: greensinbit-caddy
+    profiles: ["https"]
+    restart: unless-stopped
+    depends_on:
+      - web
+    environment:
+      DOMAIN: ${DOMAIN:-}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:

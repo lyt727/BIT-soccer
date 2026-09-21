@@ -1,0 +1,30 @@
+# 运行时数据与上传文件（不入库）
+server/data/
+
+# 临时内网穿透工具与运行痕迹
+tools/
+.public-pids
+public-url.txt
+server.out.log
+server.err.log
+tunnel.out.log
+tunnel.err.log
+
+# 依赖与本地配置
+node_modules/
+.env
+
+# 打包产物
+*.zip
+
+# 本地工具配置与备份文件（不入库）
+.claude/
+*.bak
+*.bak0*
+*.bak1*
+*.bak2*
+
+# 系统文件与日志
+.DS_Store
+Thumbs.db
+*.log

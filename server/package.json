@@ -1,0 +1,21 @@
+{
+  "name": "greensin-bit-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "绿茵BIT（北理工校园足球赛事管理系统）后端服务：零依赖可跑，SQLite 演示库 / PostgreSQL 云库双驱动",
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "reset-demo": "node scripts/reset-demo.mjs",
+    "test:api": "node scripts/smoke-test.mjs"
+  },
+  "dependencies": {},
+  "optionalDependencies": {
+    "pg": "^8.13.1"
+  },
+  "license": "MIT"
+}

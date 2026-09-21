@@ -1,0 +1,361 @@
+// 绿茵BIT V2 接口冒烟测试：node scripts/smoke-test.mjs
+// 前置：服务已启动，演示库已初始化（手机号验证码登录）
+
+const BASE = process.env.API_BASE || 'http://localhost:3000';
+const results = [];
+
+async function call(method, path, { token, body } = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  let data = null;
+  try { data = await res.json(); } catch { data = null; }
+  return { status: res.status, data };
+}
+
+function check(name, ok, extra = '') {
+  results.push({ name, ok });
+  console.log(`${ok ? 'PASS' : 'FAIL'}  ${name}${extra ? `  -> ${extra}` : ''}`);
+}
+
+async function login(phone) {
+  const sent = await call('POST', '/api/auth/send-code', { body: { phone, scene: 'login' } });
+  const code = sent.data?.demoCode;
+  if (!code) return { status: sent.status, data: null };
+  const logged = await call('POST', '/api/auth/login-code', { body: { phone, code } });
+  return { status: logged.status, data: logged.data };
+}
+
+const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
+
+const health = await call('GET', '/api/health');
+check('健康检查', health.status === 200);
+
+const adminLogin = await login('13900000001');
+const adminToken = adminLogin.data?.token;
+check('管理员手机号验证码登录', adminLogin.status === 200 && Boolean(adminToken),
+  `role=${adminLogin.data?.user?.role}`);
+
+const events = await call('GET', '/api/events', { token: adminToken });
+check('赛事列表含演示赛事', events.status === 200 && events.data?.length >= 2);
+
+const pending = await call('GET', '/api/events/evt_demo2/registrations?status=pending', { token: adminToken });
+check('读取待审核整队报名', pending.status === 200 && pending.data?.[0]?.memberCount >= 2,
+  `pending=${pending.data?.length} members=${pending.data?.[0]?.memberCount}`);
+
+const reviewId = pending.data?.[0]?.id;
+const adminJoin = await call('POST', `/api/registrations/${reviewId}/join`, {
+  token: adminToken,
+  body: {
+    name: '张伟',
+    roles: ['manager'],
+    jerseyNo: '',
+    file: { originalName: '张伟学生卡.jpg', dataUrl: PNG },
+  },
+});
+check('管理员可加入任意球队', adminJoin.status === 201, adminJoin.data?.message);
+if (adminJoin.status === 201) {
+  const adminCancel = await call('DELETE', `/api/registrations/${reviewId}/me`, {
+    token: adminToken,
+  });
+  check('管理员可取消报名', adminCancel.status === 200, adminCancel.data?.message);
+}
+const approve = await call('POST', `/api/registrations/${reviewId}/review`,
+  { token: adminToken, body: { action: 'approve' } });
+check('管理员审核通过报名', approve.status === 200 && approve.data?.status === 'approved');
+
+const playerLogin = await login('13800138002');
+const playerToken = playerLogin.data?.token;
+check('参赛球员验证码登录', playerLogin.status === 200 && Boolean(playerToken),
+  `role=${playerLogin.data?.user?.role}`);
+
+const publicRegs = await call('GET', '/api/events/evt_demo2/registrations', { token: playerToken });
+const joinTarget = publicRegs.data?.find((r) => r.status === 'pending');
+check('未审核球队对球员可见', publicRegs.status === 200 && Boolean(joinTarget));
+if (joinTarget) {
+  const joinPhone = '13900000009';
+  const joinCode = (await call('POST', '/api/auth/send-code',
+    { body: { phone: joinPhone, scene: 'register' } })).data?.demoCode;
+  const joinReg = await call('POST', '/api/auth/register',
+    { body: { phone: joinPhone, name: '测试球员', code: joinCode } });
+  const joinToken = joinReg.data?.token;
+  const joined = await call('POST', `/api/registrations/${joinTarget.id}/join`, {
+    token: joinToken,
+    body: {
+      name: '刘洋',
+      roles: ['player'],
+      jerseyNo: '10',
+      file: { originalName: '刘洋学生卡.jpg', dataUrl: PNG },
+    },
+  });
+  check('球员可加入任意球队', joined.status === 201, joined.data?.message);
+  const selfCard = await call('PATCH', `/api/registrations/${joinTarget.id}/me`, {
+    token: joinToken,
+    body: {
+      name: '刘洋',
+      jerseyNo: '10',
+      file: { originalName: '刘洋学生卡.jpg', dataUrl: PNG },
+    },
+  });
+  check('队员单独完善本人信息', selfCard.status === 200);
+  const cancel = await call('DELETE', `/api/registrations/${joinTarget.id}/me`, {
+    token: joinToken,
+  });
+  check('球员可取消报名', cancel.status === 200, cancel.data?.message);
+}
+
+const denied = await call('POST', `/api/registrations/${reviewId}/review`,
+  { token: playerToken, body: { action: 'approve' } });
+check('参赛球员审核被拒绝(403)', denied.status === 403);
+
+const aiDenied = await call('POST', '/api/ai/recognize',
+  { token: playerToken, body: { eventId: 'evt_demo1', images: [{ dataUrl: PNG }] } });
+check('参赛球员调用 AI 识图被拒绝(403)', aiDenied.status === 403);
+
+const noteDenied = await call('PATCH', '/api/matches/mt_evt1_gA3/note',
+  { token: playerToken, body: { specialNote: '球员无权修改' } });
+check('参赛球员修改特殊情况被拒绝(403)', noteDenied.status === 403);
+const staffDenied = await call('PATCH', '/api/matches/mt_evt1_gA3/staff',
+  { token: playerToken, body: { matchStaff: { supervisor: '球员无权修改' } } });
+check('参赛球员修改比赛工作人员被拒绝(403)', staffDenied.status === 403);
+
+const opLogin = await login('13900000003');
+const opToken = opLogin.data?.token;
+check('数据录入员验证码登录', opLogin.status === 200 && Boolean(opToken));
+check('权限包含关系（球员能力 ⊆ 数据录入员）',
+  ['registration.submit', 'stats.view', 'match.view', 'result.record', 'ai.recognize']
+    .every((p) => opLogin.data?.user?.permissions?.includes(p)));
+
+const koCreate = await call('POST', '/api/events/evt_demo1/matches', {
+  token: opToken,
+  body: {
+    stage: 'knockout',
+    knockoutRound: '半决赛',
+    teamAId: 'reg_e1_1',
+    teamBId: 'reg_e1_3',
+    date: '2026-10-01',
+    time: '19:00',
+    venue: '西操场 1 号场',
+    referee: '赵明',
+    assistant1: '钱进',
+    assistant2: '孙立',
+    fourthOfficial: '周舟',
+  },
+});
+check('数据录入员可添加淘汰赛并选择轮次',
+  koCreate.status === 201 && koCreate.data?.stage === 'knockout'
+  && koCreate.data?.knockoutRound === '半决赛');
+if (koCreate.status === 201) {
+  const del = await call('DELETE', `/api/matches/${koCreate.data.id}`, { token: opToken });
+  check('数据录入员可删除淘汰赛', del.status === 200);
+}
+const groupDenied = await call('POST', '/api/events/evt_demo1/matches', {
+  token: opToken,
+  body: {
+    stage: 'group',
+    groupName: 'A',
+    teamAId: 'reg_e1_1',
+    teamBId: 'reg_e1_3',
+    date: '2026-10-02',
+    time: '19:00',
+    venue: '西操场 1 号场',
+    referee: '赵明',
+    assistant1: '钱进',
+    assistant2: '孙立',
+    fourthOfficial: '周舟',
+  },
+});
+check('数据录入员添加小组赛被拒绝(403)', groupDenied.status === 403);
+
+const minimalMatch = await call('POST', '/api/events/evt_demo1/matches', {
+  token: adminToken,
+  body: {
+    stage: 'group',
+    groupName: 'C',
+    teamAId: 'reg_e1_1',
+    teamBId: 'reg_e1_2',
+  },
+});
+check('仅必填项（阶段/轮次/主客队）可创建比赛',
+  minimalMatch.status === 201 && minimalMatch.data?.groupName === 'C');
+if (minimalMatch.status === 201) {
+  await call('DELETE', `/api/matches/${minimalMatch.data.id}`, { token: adminToken });
+}
+
+const noteOk = await call('PATCH', '/api/matches/mt_evt1_gA3/note',
+  { token: opToken, body: { specialNote: '数据录入员补充：双方按规则换边' } });
+check('数据录入员可编辑特殊情况说明', noteOk.status === 200
+  && noteOk.data?.specialNote === '数据录入员补充：双方按规则换边');
+const staffOk = await call('PATCH', '/api/matches/mt_evt1_gA3/staff', {
+  token: opToken,
+  body: {
+    matchStaff: {
+      supervisor: '刘建国',
+      photographer: '陈摄影',
+      videographer: '王摄像',
+      commentator: '李解说',
+      reporter: '赵战报',
+    },
+  },
+});
+check('数据录入员可填写比赛工作人员', staffOk.status === 200
+  && staffOk.data?.matchStaff?.supervisor === '刘建国'
+  && staffOk.data?.matchStaff?.reporter === '赵战报');
+const staffStats = await call('GET', '/api/events/evt_demo1/staff-stats', { token: opToken });
+check('赛事工作人员统计（裁判+其他角色）',
+  staffStats.status === 200
+  && staffStats.data?.referees?.some((r) => r.role === '主裁判' && r.name)
+  && staffStats.data?.staff?.some((r) => r.role === '比赛监督' && r.matches >= 1));
+
+const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
+  token: opToken,
+  body: {
+    scoreA: 2, scoreB: 1,
+    goalsA: [{ player: '赵磊', time: "11'" }, { player: '', time: '' }],
+    goalsB: [{ player: '孙浩', time: "66'", penalty: true }],
+    refereeList: ['赵明', '周舟'],
+    substitutions: [{ team: '自动化学院一队', offPlayer: '高远', onPlayer: '赵磊', time: "60'" }],
+    cards: [{ team: '材料学院一队', player: '何强', type: 'yellow', time: "44'" }],
+    source: 'manual',
+  },
+});
+check('数据录入员录比赛结果', result.status === 200 && result.data?.status === 'finished');
+
+const standings = await call('GET', '/api/events/evt_demo1/standings', { token: playerToken });
+check('球员只读积分榜', standings.status === 200 && standings.data?.length > 0);
+const grouped = await call('GET', '/api/events/evt_demo1/standings-by-group', { token: playerToken });
+check('积分榜按小组分别排名',
+  grouped.status === 200 && grouped.data?.length === 4
+  && grouped.data.some((g) => g.groupName === 'A' && g.rows.length === 4)
+  && grouped.data.some((g) => g.groupName === 'D' && g.rows.length === 3));
+
+const scorers = await call('GET', '/api/events/evt_demo1/scorers', { token: playerToken });
+check('射手榜含新进球', scorers.status === 200
+  && scorers.data?.some((s) => s.player === '赵磊' && s.goals === 1));
+
+// 整队报名：3 名成员，每人学生卡照片
+const submit = await call('POST', '/api/events/evt_demo2/registrations', {
+  token: adminToken,
+  body: {
+    teamName: '睿信书院联队',
+    jerseyTop: '红白',
+    jerseyShorts: '黑',
+    jerseySocks: '白',
+    members: [
+      { name: '陈晨', phone: '13900000101', roles: ['manager'], jerseyNo: '', file: { originalName: '陈晨学生卡.jpg', dataUrl: PNG } },
+      { name: '赵磊', phone: '13900000102', roles: ['player'], jerseyNo: '10', file: { originalName: '赵磊学生卡.jpg', dataUrl: PNG } },
+      { name: '孙浩', phone: '13900000103', roles: ['player'], jerseyNo: '11', file: { originalName: '孙浩学生卡.jpg', dataUrl: PNG } },
+    ],
+  },
+});
+check('整队报名（每名成员学生卡）', submit.status === 201 && submit.data?.memberCount === 3,
+  submit.data?.message);
+
+const editRes = await call('PATCH', `/api/registrations/${submit.data.id}`, {
+  token: adminToken,
+  body: {
+    teamName: '睿信书院联队',
+    jerseyTop: '红白',
+    jerseyShorts: '黑',
+    jerseySocks: '白',
+    members: [
+      { name: '陈晨', phone: '13900000101', roles: ['manager'], jerseyNo: '', file: { originalName: '陈晨学生卡.jpg', dataUrl: PNG } },
+      { name: '赵磊', phone: '13900000102', roles: ['player'], jerseyNo: '10', file: { originalName: '赵磊学生卡.jpg', dataUrl: PNG } },
+      { name: '孙浩', phone: '13900000103', roles: ['player'], jerseyNo: '11', file: { originalName: '孙浩学生卡.jpg', dataUrl: PNG } },
+      { name: '罗毅', phone: '13900000104', roles: ['player'], jerseyNo: '12', file: { originalName: '罗毅学生卡.jpg', dataUrl: PNG } },
+    ],
+  },
+});
+check('报名中可编辑队员名单', editRes.status === 200 && editRes.data?.memberCount === 4);
+
+// 管理员切到进行中后，名单锁定不可编辑
+await call('PATCH', '/api/events/evt_demo2/status', { token: adminToken, body: { status: 'live' } });
+const lockEdit = await call('PATCH', `/api/registrations/${submit.data.id}`, {
+  token: adminToken,
+  body: {
+    teamName: '睿信书院联队',
+    jerseyTop: '红白',
+    jerseyShorts: '黑',
+    jerseySocks: '白',
+    members: [
+      { name: '陈晨', phone: '13900000101', roles: ['manager'], jerseyNo: '', file: { originalName: 'a.jpg', dataUrl: PNG } },
+      { name: '赵磊', phone: '13900000102', roles: ['player'], jerseyNo: '10', file: { originalName: 'b.jpg', dataUrl: PNG } },
+    ],
+  },
+});
+check('开赛后名单锁定(REG_LOCKED)', lockEdit.status === 400 && lockEdit.data?.code === 'REG_LOCKED');
+await call('PATCH', '/api/events/evt_demo2/status', { token: adminToken, body: { status: 'signup' } });
+
+// 报名结束后不可修改/新增：进行中赛事拒绝新报名
+const locked = await call('POST', '/api/events/evt_demo1/registrations', {
+  token: playerToken,
+  body: {
+    teamName: '睿信书院联队',
+    members: [
+      { name: '刘洋', phone: '13800138002', file: { originalName: 'a.jpg', dataUrl: PNG } },
+      { name: '王强', phone: '13800138001', file: { originalName: 'b.jpg', dataUrl: PNG } },
+    ],
+  },
+});
+check('进行中赛事报名被锁定(400)', locked.status === 400 && locked.data?.code === 'REG_LOCKED',
+  locked.data?.error);
+
+const ai = await call('POST', '/api/ai/recognize', {
+  token: opToken,
+  body: {
+    eventId: 'evt_demo1',
+    images: [
+      { name: '裁判报告-示例.jpg', dataUrl: PNG },
+      { name: '比分照片-补充.jpg', dataUrl: PNG },
+    ],
+  },
+});
+check('AI 识图返回结构化结果', ai.status === 200 && ai.data?.confidence?.overall > 0.8);
+check('AI 建议回填比赛', Boolean(ai.data?.suggestedMatchId));
+check('AI 识别完整裁判报告（名单/号码/颜色）',
+  ai.data?.match?.lineups?.A?.starting?.length > 0
+  && ai.data?.match?.lineups?.A?.starting?.[0]?.no
+  && ai.data?.match?.kitColorA);
+
+// AI 结果一键回填：名单/颜色与时间轴事件全部落库
+const aim = ai.data?.match;
+if (aim && ai.data?.suggestedMatchId) {
+  const goalsA = (aim.goals || []).filter((g) => g.side === 'A');
+  const goalsB = (aim.goals || []).filter((g) => g.side === 'B');
+  const applied = await call('POST', `/api/matches/${ai.data.suggestedMatchId}/result`, {
+    token: opToken,
+    body: {
+      scoreA: aim.scoreA,
+      scoreB: aim.scoreB,
+      goalsA: goalsA.map((g) => ({ no: g.no, player: g.player, time: g.time, penalty: g.penalty })),
+      goalsB: goalsB.map((g) => ({ no: g.no, player: g.player, time: g.time, penalty: g.penalty })),
+      substitutions: aim.substitutions,
+      cards: aim.cards,
+      refereeRoles: aim.referees,
+      lineupA: {
+        color: aim.kitColorA,
+        starting: aim.lineups.A.starting,
+        substitutes: aim.lineups.A.substitutes,
+      },
+      lineupB: {
+        color: aim.kitColorB,
+        starting: aim.lineups.B.starting,
+        substitutes: aim.lineups.B.substitutes,
+      },
+      source: 'ai',
+    },
+  });
+  check('AI 名单/颜色/时间轴落库', applied.status === 200
+    && applied.data?.lineups?.A?.starting?.length > 0
+    && applied.data?.lineups?.A?.color
+    && applied.data?.timeline?.some((t) => t.type === 'goal' && t.no));
+}
+
+const failed = results.filter((r) => !r.ok).length;
+console.log(`\n共 ${results.length} 项，失败 ${failed} 项`);
+process.exit(failed ? 1 : 0);

@@ -1,0 +1,38 @@
+{
+  "name": "裁判报告识别评测集（示例）",
+  "teams": [
+    "信息与电子学院一队",
+    "机械与车辆学院一队",
+    "睿信书院联队",
+    "特立书院队"
+  ],
+  "samples": [
+    {
+      "name": "样例1-打印版",
+      "image": "ai-eval/samples/printed-01.jpg",
+      "expected": {
+        "teamA": "信息与电子学院一队",
+        "teamB": "机械与车辆学院一队",
+        "scoreA": 2,
+        "scoreB": 1,
+        "kitColorA": "红白",
+        "kitColorB": "蓝黑",
+        "startingA": ["王强", "李昂", "张伟", "刘洋", "陈杰", "杨帆", "赵磊", "孙鹏", "周涛", "吴昊", "郑凯"],
+        "startingB": ["李明", "王伟", "张磊", "马超", "许飞", "高原", "何健", "冯涛", "董亮", "谢辉", "崔鹏"],
+        "goals": [
+          { "side": "A", "player": "王强", "time": "23'", "penalty": false },
+          { "side": "A", "player": "李昂", "time": "41'", "penalty": false },
+          { "side": "B", "player": "李明", "time": "67'", "penalty": true }
+        ],
+        "cards": [
+          { "team": "机械与车辆学院一队", "player": "王伟", "type": "yellow" }
+        ],
+        "substitutions": [
+          { "offPlayer": "张磊", "onPlayer": "李昂" },
+          { "offPlayer": "马超", "onPlayer": "许飞" }
+        ],
+        "referees": { "main": "赵明", "assistant1": "周舟", "assistant2": "孙立", "fourth": "钱进" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "name": "绿茵BIT · 校园足球赛事管理",
+  "short_name": "绿茵BIT",
+  "description": "北理工校园足球赛事管理系统：报名审核、抽签分组、赛程安排、数据统计与 AI 识图",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f4f7f5",
+  "theme_color": "#0b7a43",
+  "lang": "zh-CN",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
