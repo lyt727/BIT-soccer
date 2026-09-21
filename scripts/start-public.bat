@@ -8,6 +8,15 @@ set "CF=%TOOLS%\cloudflared.exe"
 
 if not exist "%TOOLS%" mkdir "%TOOLS%"
 
+tasklist /FI "IMAGENAME eq cloudflared.exe" 2>nul | find /I "cloudflared.exe" >nul
+if not errorlevel 1 (
+  echo A tunnel process is already running.
+  echo Please check the existing "GreenPitch Tunnel" window for the public link.
+  echo If you want a new link, run stop-public.bat first.
+  pause
+  exit /b 0
+)
+
 if not exist "%CF%" (
   echo [1/3] Downloading cloudflared tunnel tool ...
   where curl >nul 2>&1
