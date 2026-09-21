@@ -272,5 +272,13 @@ export function seedIfEmpty(db) {
     );
   });
 
+  // 比赛工作人员示例（比赛监督 / 拍照同学 / 录像同学 / 解说同学 / 战报同学）
+  const updStaff = db.prepare(
+    `UPDATE matches SET match_supervisor = ?, photographer = ?, videographer = ?,
+        commentator = ?, reporter = ? WHERE id = ?`);
+  updStaff.run('刘建国', '陈摄影', '王摄像', '李解说', '赵战报', 'mt_evt1_gA1');
+  updStaff.run('刘建国', '陈摄影', '', '', '', 'mt_evt1_gB1');
+  updStaff.run('周老师', '李摄影', '赵摄像', '孙解说', '吴战报', 'mt_evt1_sf1');
+
   return true;
 }
