@@ -1,4 +1,5 @@
 @echo off
+chcp 65001 >nul
 setlocal
 cd /d "%~dp0.."
 set "ROOT=%CD%"
@@ -8,10 +9,18 @@ set "CF=%TOOLS%\cloudflared.exe"
 if not exist "%TOOLS%" mkdir "%TOOLS%"
 
 if not exist "%CF%" (
-  echo 首次运行：正在下载 cloudflared 隧道工具（约 55MB）...
-  curl -L -o "%CF%" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+  echo [1/3] Downloading cloudflared tunnel tool ...
+  where curl >nul 2>&1
+  if errorlevel 1 (
+    echo curl not found. Please download cloudflared manually:
+    echo https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
+    echo Save it as: %CF%
+    pause
+    exit /b 1
+  )
+  curl -L --fail --silent --show-error -o "%CF%" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe
   if not exist "%CF%" (
-    echo 下载失败，请检查网络后重试。
+    echo Download failed. Please check your network and run again.
     pause
     exit /b 1
   )
@@ -19,23 +28,24 @@ if not exist "%CF%" (
 
 netstat -ano | findstr ":3000" | findstr "LISTENING" >nul
 if errorlevel 1 (
-  echo 正在启动绿茵BIT服务...
-  start "绿茵BIT服务" /min cmd /k "cd /d %ROOT% && node server\src\index.js"
+  echo [2/3] Starting GreenPitch server ...
+  start "GreenPitch Server" /min cmd /k "cd /d %ROOT% && node server\src\index.js"
   timeout /t 2 /nobreak >nul
 ) else (
-  echo 检测到 3000 端口已有服务，直接复用。
+  echo [2/3] Port 3000 is already in use, reusing it.
 )
 
-echo 正在启动公网隧道...
-start "绿茵BIT隧道" cmd /k ""%CF%" tunnel --url http://localhost:3000 --no-autoupdate"
+echo [3/3] Starting public tunnel ...
+start "GreenPitch Tunnel" cmd /k ""%CF%" tunnel --url http://localhost:3000 --no-autoupdate"
 
 echo.
 echo ============================================================
-echo  已启动两个窗口：
-echo   1) 绿茵BIT服务  —— 不要关闭
-echo   2) 绿茵BIT隧道  —— 窗口里会显示 https://xxxx.trycloudflare.com
-echo  把隧道窗口里的链接复制给同学即可。
-echo  电脑需要保持开机联网，不能休眠。
+echo  Two windows were started:
+echo    1) GreenPitch Server  -- keep it open
+echo    2) GreenPitch Tunnel  -- copy the https://xxxx.trycloudflare.com link
+echo.
+echo  Keep this computer powered on and connected. No sleep mode.
+echo  To stop: double-click stop-public.bat
 echo ============================================================
 echo.
 pause
