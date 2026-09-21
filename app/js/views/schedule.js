@@ -149,11 +149,14 @@ function openMatchStats(m, event, canEdit = false) {
 
 const STAFF_FIELDS = [
   ['supervisor', '比赛监督'],
-  ['photographer', '拍照同学'],
-  ['videographer', '录像同学'],
-  ['commentator', '解说同学'],
-  ['reporter', '战报同学'],
+  ['photographer', '拍照'],
+  ['videographer', '录像'],
+  ['commentator', '解说'],
+  ['reporter', '战报'],
 ];
+const staffPlaceholder = (key, label) => (key === 'supervisor'
+  ? `请输入${label}姓名`
+  : `请输入${label}同学姓名`);
 
 function staffSummary(m) {
   const parts = STAFF_FIELDS
@@ -172,7 +175,7 @@ function staffBlock(m, canEdit) {
   const rows = STAFF_FIELDS.map(([key, label]) => {
     const input = el('input', {
       value: m.matchStaff?.[key] || '',
-      placeholder: `请输入${label}姓名`,
+      placeholder: staffPlaceholder(key, label),
     });
     inputs[key] = input;
     return el('label', { class: 'field' }, el('span', {}, label), input);
