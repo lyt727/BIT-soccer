@@ -38,10 +38,10 @@ export function registerStatsRoutes(router) {
     ];
     const STAFF_ROLES = [
       ['match_supervisor', '比赛监督'],
-      ['photographer', '拍照'],
-      ['videographer', '录像'],
-      ['commentator', '解说'],
-      ['reporter', '战报'],
+      ['photographer', '拍照同学'],
+      ['videographer', '录像同学'],
+      ['commentator', '解说同学'],
+      ['reporter', '战报同学'],
     ];
     const collect = (defs) => {
       const map = new Map();
