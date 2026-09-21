@@ -183,8 +183,13 @@ label.field > span { display: block; margin-bottom: 5px; color: var(--text); fon
 
 /* ---------- Tabs ---------- */
 .tabs {
+  position: sticky; top: 54px; z-index: 20;
   display: flex; gap: 4px; padding: 4px; background: #e8efe9; border-radius: 12px;
-  overflow-x: auto; scrollbar-width: none; margin: 4px 0 12px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+  margin: 4px 0 12px;
+  -webkit-overflow-scrolling: touch;
+  touch-action: pan-x;
+  overscroll-behavior-x: contain;
 }
 .tabs::-webkit-scrollbar { display: none; }
 .tab {
