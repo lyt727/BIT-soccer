@@ -28,6 +28,21 @@
 | PATCH | /admin/users/:id | user.manage —— 可改角色 / 停用启用 / 传 `password` 重置密码 |
 | GET | /audit | user.view |
 
+## 红黄牌与停赛
+
+| 方法 | 路径 | 权限 | 说明 |
+|---|---|---|---|
+| GET | /events/:id/card-stats | 登录用户 | 红牌榜、黄牌榜、停赛台账 |
+| POST | /events/:id/suspensions | suspension.manage | 登记停赛（落库即为“下一轮停赛”）|
+| PATCH | /suspensions/:sid | suspension.manage | 改状态/备注；标记 `served` 时写入清零值 |
+| DELETE | /suspensions/:sid | suspension.manage | 删除误登记的停赛 |
+
+统计口径：
+
+- 红牌数、总黄牌数：整届赛事累计，永不重置；
+- 累计黄牌数 = 总黄牌数 − 该球员所有「已完成停赛」记录写入的清零值；
+- 状态（下一轮停赛 / 已完成停赛 / 已失效）完全由管理员人工维护，系统不做任何停赛规则的自动判断。
+
 ## 赛事
 
 | 方法 | 路径 | 说明 |

@@ -27,6 +27,7 @@ const ADMIN_PERMISSIONS = [
   'event.create', 'event.delete', 'event.status.update', 'staff.manage',
   'registration.review', 'registration.view_materials',
   'draw.groups', 'match.manage',
+  'suspension.manage',
 ];
 
 const PERMISSIONS = {};

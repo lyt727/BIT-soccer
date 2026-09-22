@@ -252,6 +252,50 @@ check('赛事工作人员统计（裁判+其他角色）',
   && staffStats.data?.referees?.some((r) => r.role === '主裁判' && r.name)
   && staffStats.data?.staff?.some((r) => r.role === '比赛监督' && r.matches >= 1));
 
+// ---- 红黄牌榜与停赛台账 ----
+const cardStats = await call('GET', '/api/events/evt_demo1/card-stats', { token: playerToken });
+check('球员可读红黄牌榜', cardStats.status === 200
+  && cardStats.data?.reds?.length >= 1 && cardStats.data?.yellows?.length >= 1,
+  `红牌 ${cardStats.data?.reds?.length} 黄牌 ${cardStats.data?.yellows?.length}`);
+check('红牌榜含停赛状态', cardStats.data?.reds?.some((r) => r.status === 'pending'));
+const servedRow = cardStats.data?.yellows?.find((y) => y.status === 'served');
+check('累计黄牌按清零值扣减', Boolean(servedRow)
+  && servedRow.currentYellows < servedRow.totalYellows,
+  `总=${servedRow?.totalYellows} 累计=${servedRow?.currentYellows}`);
+check('停赛台账返回完整字段', Array.isArray(cardStats.data?.suspensions)
+  && cardStats.data.suspensions.every((s) => s.statusLabel && s.reasonLabel));
+
+const suspDenied = await call('POST', '/api/events/evt_demo1/suspensions',
+  { token: opToken, body: { registrationId: 'reg_e1_1', player: '测试', reason: 'red_card' } });
+check('数据录入员登记停赛被拒绝(403)', suspDenied.status === 403);
+
+const theTeam = (await call('GET', '/api/events/evt_demo1/registrations', { token: adminToken }))
+  .data.find((t) => t.id === 'reg_e1_1');
+const suspMember = (theTeam?.members || []).find((m) => m.roles.includes('player'));
+const suspNew = await call('POST', '/api/events/evt_demo1/suspensions', {
+  token: adminToken,
+  body: {
+    registrationId: 'reg_e1_1', player: suspMember?.name,
+    playerNo: suspMember?.jerseyNo, reason: 'yellow_accumulation', note: '冒烟测试',
+  },
+});
+check('管理员登记停赛', suspNew.status === 201, suspNew.data?.error || '');
+const beforeServe = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.yellows.find((y) => y.player === suspMember?.name);
+const served = await call('PATCH', `/api/suspensions/${suspNew.data?.id}`,
+  { token: adminToken, body: { status: 'served' } });
+check('标记已完成停赛并清零累计黄牌',
+  served.status === 200 && served.data?.clearedYellow === (beforeServe?.currentYellows ?? 0),
+  `清零=${served.data?.clearedYellow}`);
+const afterServe = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.yellows.find((y) => y.player === suspMember?.name);
+check('清零后累计黄牌归零、总黄牌不变',
+  afterServe?.currentYellows === 0
+  && afterServe?.totalYellows === beforeServe?.totalYellows,
+  `累计=${afterServe?.currentYellows} 总=${afterServe?.totalYellows}`);
+const suspDel = await call('DELETE', `/api/suspensions/${suspNew.data?.id}`, { token: adminToken });
+check('删除停赛记录', suspDel.status === 200);
+
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,
   body: {

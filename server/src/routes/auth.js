@@ -13,6 +13,7 @@ const ALL_ACTIONS = [
   'staff.manage', 'registration.submit', 'registration.review',
   'registration.view_materials', 'draw.groups', 'match.manage',
   'result.record', 'ai.recognize', 'stats.view', 'match.view',
+  'suspension.manage',
 ];
 
 export function withPerms(user) {

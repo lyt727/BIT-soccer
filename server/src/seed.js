@@ -160,6 +160,7 @@ export function seedIfEmpty(db) {
   };
 
   const rosterByReg = {};
+  const demoCards = [];
   E1_TEAMS.forEach(([rid, teamName, coach, captain, top, shorts, socks], idx) => {
     const roster = makeRoster(idx + 1, coach, captain, 15);
     rosterByReg[rid] = { roster, teamName, color: top };
@@ -253,9 +254,32 @@ export function seedIfEmpty(db) {
           const cardPlayer = rosterByReg[bId].roster.find((m) => m.roles.includes('player'));
           insertCard.run(`c_${mid}`, mid, rosterByReg[bId].teamName,
             cardPlayer.name, cardPlayer.jerseyNo, 'yellow', "33'");
+          // 再补一张红牌，用于演示红牌停赛与停赛台账
+          const redPlayer = rosterByReg[bId].roster
+            .filter((m) => m.roles.includes('player'))[1] || cardPlayer;
+          insertCard.run(`r_${mid}`, mid, rosterByReg[bId].teamName,
+            redPlayer.name, redPlayer.jerseyNo, 'red', "78'");
+          demoCards.push({ regId: bId, yellow: cardPlayer, red: redPlayer });
         }
       }
     });
+  }
+
+  // 停赛台账示例：一条红牌停赛（下一轮停赛）+ 一条累计黄牌停赛（已完成停赛，累计黄牌清零）
+  if (demoCards.length >= 2) {
+    const insertSusp = db.prepare(
+      `INSERT INTO player_suspensions
+         (id, event_id, registration_id, team_name, player, player_no, reason, note,
+          status, cleared_yellow, created_by, created_at)
+       VALUES (?, 'evt_demo1', ?, ?, ?, ?, ?, ?, ?, ?, 'usr_admin', ?)`);
+    const pending = demoCards[0];
+    insertSusp.run('sus_demo_pending', pending.regId, rosterByReg[pending.regId].teamName,
+      pending.red.name, pending.red.jerseyNo, 'red_card',
+      '红牌罚下，下一轮停赛（演示数据）', 'pending', 0, now);
+    const served = demoCards[1];
+    insertSusp.run('sus_demo_served', served.regId, rosterByReg[served.regId].teamName,
+      served.yellow.name, served.yellow.jerseyNo, 'yellow_accumulation',
+      '累计黄牌停赛一轮，已执行（演示数据）', 'served', 1, now);
   }
 
   // 淘汰赛（单回合、手动对阵）：两场半决赛 + 一场决赛

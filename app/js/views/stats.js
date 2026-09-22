@@ -41,10 +41,11 @@ export async function renderStats(container, event) {
 export async function renderLeaderboards(container, event) {
   clear(container);
   try {
-    const [groupStandings, scorers, matches] = await Promise.all([
+    const [groupStandings, scorers, matches, cards] = await Promise.all([
       api(`/events/${event.id}/standings-by-group`),
       api(`/events/${event.id}/scorers`),
       api(`/events/${event.id}/matches`),
+      api(`/events/${event.id}/card-stats`),
     ]);
     container.append(el('div', { class: 'section-title' },
       '小组赛积分榜',
@@ -65,6 +66,25 @@ export async function renderLeaderboards(container, event) {
       scorers.map((r) => [r.rank, r.player, r.teamName, r.goals, r.penalties]),
     ));
     container.append(scorersTable(scorers));
+
+    container.append(sectionWithExport(
+      '红牌榜', '红牌自动停赛一轮，状态由管理员在停赛台账里维护', `${event.name}-红牌榜`,
+      ['排名', '号码', '球员', '球队', '红牌数', '状态'],
+      cards.reds.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
+        r.redCards, r.statusLabel || '']),
+    ));
+    container.append(redCardsTable(cards.reds));
+    container.append(sectionWithExport(
+      '黄牌榜', '累计黄牌在“已完成停赛”后清零，总黄牌持续累加', `${event.name}-黄牌榜`,
+      ['排名', '号码', '球员', '球队', '总黄牌数', '累计黄牌数', '状态'],
+      cards.yellows.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
+        r.totalYellows, r.currentYellows, r.statusLabel || '']),
+    ));
+    container.append(yellowCardsTable(cards.yellows));
+    if (hasPerm(session.user, 'suspension.manage')) {
+      container.append(suspensionPanel(event, cards.suspensions,
+        () => renderLeaderboards(container, event)));
+    }
     const knockout = matches
       .filter((m) => m.stage === 'knockout')
       .sort((a, b) => {
@@ -132,6 +152,183 @@ function staffStatTable(rows, emptyText) {
       el('td', { style: { fontWeight: '500' } }, r.name),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#0b7a43' } }, r.matches)))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
+}
+
+// ---------------- 红黄牌榜与停赛台账 ----------------
+const SUSP_COLOR = { pending: '#c62828', served: '#0b7a43', void: '#8a8f8c' };
+
+function cardStatusCell(row) {
+  if (!row.statusLabel) return el('span', { class: 'small muted' }, '—');
+  return el('span', {
+    style: {
+      color: SUSP_COLOR[row.status] || '#333',
+      fontWeight: '600', whiteSpace: 'nowrap',
+    },
+  }, row.statusLabel);
+}
+
+function redCardsTable(rows) {
+  if (!rows.length) return empty('暂无红牌记录', '🟥');
+  const table = el('table', {},
+    el('thead', {}, el('tr', {},
+      el('th', {}, '排名'), el('th', {}, '号码'), el('th', {}, '球员'),
+      el('th', {}, '球队'), el('th', { class: 'num' }, '红牌'), el('th', {}, '状态'))),
+    el('tbody', {}, rows.map((r) => el('tr', {},
+      el('td', { class: 'num' }, r.rank),
+      el('td', { class: 'num' }, r.playerNo || '—'),
+      el('td', { style: { fontWeight: '500' } }, r.player),
+      el('td', {}, r.teamName),
+      el('td', { class: 'num', style: { fontWeight: '700', color: '#c62828' } }, r.redCards),
+      el('td', {}, cardStatusCell(r))))));
+  return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
+}
+
+function yellowCardsTable(rows) {
+  if (!rows.length) return empty('暂无黄牌记录', '🟨');
+  const table = el('table', {},
+    el('thead', {}, el('tr', {},
+      el('th', {}, '排名'), el('th', {}, '号码'), el('th', {}, '球员'), el('th', {}, '球队'),
+      el('th', { class: 'num' }, '总黄牌'), el('th', { class: 'num' }, '累计黄牌'),
+      el('th', {}, '状态'))),
+    el('tbody', {}, rows.map((r) => el('tr', {},
+      el('td', { class: 'num' }, r.rank),
+      el('td', { class: 'num' }, r.playerNo || '—'),
+      el('td', { style: { fontWeight: '500' } }, r.player),
+      el('td', {}, r.teamName),
+      el('td', { class: 'num' }, r.totalYellows),
+      el('td', { class: 'num', style: { fontWeight: '700', color: '#e08a00' } }, r.currentYellows),
+      el('td', {}, cardStatusCell(r))))));
+  return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
+}
+
+function suspensionPanel(event, suspensions, reload) {
+  const box = el('div', {});
+  box.append(el('div', { class: 'row between wrap', style: { margin: '20px 2px 10px' } },
+    el('div', { class: 'section-title', style: { margin: 0 } }, '停赛台账',
+      el('small', {}, '全部人工维护：登记后为「下一轮停赛」，赛后标记「已完成停赛」即自动清零累计黄牌')),
+    btn('＋ 登记停赛', {
+      type: 'primary', cls: 'sm',
+      onClick: () => openSuspensionForm(event, reload),
+    })));
+  if (!suspensions.length) {
+    box.append(empty('暂无停赛记录', '🟥'));
+    return box;
+  }
+  const patch = async (s, status, message) => {
+    if (!await confirmBox(message)) return;
+    try {
+      const r = await api(`/suspensions/${s.id}`, { method: 'PATCH', body: { status } });
+      toast(status === 'served'
+        ? `已标记完成停赛，清零累计黄牌 ${r.clearedYellow} 张`
+        : '已更新停赛状态', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  for (const s of suspensions) {
+    box.append(el('div', { class: 'list-item' },
+      el('div', { class: 'main' },
+        el('div', { class: 'row wrap' },
+          el('span', { class: 'title' }, `${s.player}${s.playerNo ? ` · ${s.playerNo} 号` : ''}`),
+          el('span', { class: 'small muted' }, s.teamName),
+          cardStatusCell(s)),
+        el('div', { class: 'desc' },
+          `${s.reasonLabel}${s.note ? ` · ${s.note}` : ''}`)),
+      el('div', { class: 'row wrap' },
+        s.status !== 'served' ? btn('已完成停赛', {
+          cls: 'sm', type: 'outline',
+          onClick: () => patch(s, 'served',
+            `把「${s.player}」标记为已完成停赛？累计黄牌数将清零（总黄牌数不变）。`),
+        }) : null,
+        s.status !== 'void' ? btn('标记失效', {
+          cls: 'sm', type: 'outline',
+          onClick: () => patch(s, 'void', '标记为已失效（例如球队被淘汰、停赛无法执行）？'),
+        }) : null,
+        s.status !== 'pending' ? btn('恢复停赛', {
+          cls: 'sm', type: 'outline',
+          onClick: () => patch(s, 'pending', '恢复为「下一轮停赛」？'),
+        }) : null,
+        btn('删除', {
+          cls: 'sm', type: 'outline',
+          onClick: async () => {
+            if (!await confirmBox(`删除「${s.player}」的停赛记录？`)) return;
+            try {
+              await api(`/suspensions/${s.id}`, { method: 'DELETE' });
+              toast('已删除', 'success');
+              reload();
+            } catch (err) { toast(err.message, 'error'); }
+          },
+        }))));
+  }
+  return box;
+}
+
+const MEMBER_ROLE_LABEL = {
+  head_coach: '主教练', manager: '领队', captain: '队长', player: '队员',
+};
+
+async function openSuspensionForm(event, onDone) {
+  let regs = [];
+  try {
+    regs = await api(`/events/${event.id}/registrations`);
+  } catch (err) { toast(err.message, 'error'); return; }
+  const teams = (regs || []).filter((r) => r.status === 'approved');
+  if (!teams.length) { toast('该赛事还没有已通过的报名球队', 'error'); return; }
+
+  const teamSel = el('select', { id: 'susp-team' },
+    teams.map((t) => el('option', { value: t.id }, t.teamName)));
+  const playerSel = el('select', { id: 'susp-player' });
+  const reasonSel = el('select', { id: 'susp-reason' },
+    el('option', { value: 'red_card' }, '红牌'),
+    el('option', { value: 'yellow_accumulation' }, '累计黄牌'));
+  const noteInput = el('input', { id: 'susp-note', placeholder: '备注（可选）' });
+
+  const fillPlayers = () => {
+    clear(playerSel);
+    const team = teams.find((t) => t.id === teamSel.value);
+    for (const m of team?.members || []) {
+      const roles = (m.roles || []).map((r) => MEMBER_ROLE_LABEL[r] || r).join('/');
+      playerSel.append(el('option', {
+        value: m.name,
+        dataset: { no: m.jerseyNo || '' },
+      }, `${m.jerseyNo ? `${m.jerseyNo} 号 ` : ''}${m.name}（${roles}）`));
+    }
+  };
+  teamSel.onchange = fillPlayers;
+  fillPlayers();
+
+  const modal = openModal({
+    title: '登记停赛',
+    body: el('div', {},
+      el('p', { class: 'small muted' },
+        '登记后状态为「下一轮停赛」。比赛结束后回到这里点「已完成停赛」，累计黄牌会自动清零。'),
+      field('球队', teamSel),
+      field('球员', playerSel),
+      field('停赛类型', reasonSel),
+      field('备注', noteInput)),
+  });
+  const submit = async () => {
+    const opt = playerSel.selectedOptions[0];
+    if (!playerSel.value) { toast('请选择球员', 'error'); return; }
+    try {
+      await api(`/events/${event.id}/suspensions`, {
+        method: 'POST',
+        body: {
+          registrationId: teamSel.value,
+          player: playerSel.value,
+          playerNo: opt?.dataset?.no || '',
+          reason: reasonSel.value,
+          note: noteInput.value.trim(),
+        },
+      });
+      modal.close();
+      toast('已登记停赛（下一轮停赛）', 'success');
+      onDone();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  modal.setFoot([
+    btn('取消', { onClick: () => modal.close() }),
+    btn('登记', { type: 'primary', onClick: submit }),
+  ]);
 }
 
 function standingsTable(rows) {

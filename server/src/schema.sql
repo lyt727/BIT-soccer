@@ -154,6 +154,29 @@ CREATE TABLE IF NOT EXISTS match_cards (
   card_time TEXT
 );
 
+-- 停赛台账（全人工维护：管理员登记停赛、标记执行/失效）
+--   status: pending 下一轮停赛 / served 已完成停赛 / void 已失效（球队被淘汰等）
+--   cleared_yellow: 标记“已完成停赛”时，把该球员当前的累计黄牌数写进来，
+--                   累计黄牌 = 总黄牌 - 该球员所有已执行停赛的 cleared_yellow 之和
+CREATE TABLE IF NOT EXISTS player_suspensions (
+  id TEXT PRIMARY KEY,
+  event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+  registration_id TEXT REFERENCES registrations(id) ON DELETE CASCADE,
+  team_name TEXT NOT NULL,
+  player TEXT NOT NULL,
+  player_no TEXT,
+  reason TEXT NOT NULL DEFAULT 'red_card'
+         CHECK (reason IN ('red_card','yellow_accumulation')),
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'pending'
+         CHECK (status IN ('pending','served','void')),
+  cleared_yellow INTEGER NOT NULL DEFAULT 0,
+  created_by TEXT,
+  created_at TEXT NOT NULL,
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_susp_event ON player_suspensions(event_id);
+
 CREATE TABLE IF NOT EXISTS audit_log (
   id TEXT PRIMARY KEY,
   user_id TEXT REFERENCES users(id),

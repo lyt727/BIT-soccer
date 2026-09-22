@@ -116,3 +116,128 @@ export function parseJsonArray(text, fallback = []) {
     return fallback;
   }
 }
+
+// 红黄牌榜 + 停赛状态
+//   总黄牌数：整届赛事累加，永不重置
+//   累计黄牌数：总黄牌数 - 该球员所有“已完成停赛”记录的清零值
+//   状态：全部由管理员在停赛台账里人工维护，系统不做任何规则判断
+const REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌' };
+const STATUS_LABEL = { pending: '下一轮停赛', served: '已完成停赛', void: '已失效' };
+
+export function computeCardStats(db, eventId) {
+  const cards = db.all(
+    `SELECT c.player, c.player_no, c.card_type,
+            r.id AS reg_id, r.team_name
+       FROM match_cards c
+       JOIN matches m ON m.id = c.match_id
+       JOIN registrations r ON r.event_id = m.event_id AND r.team_name = c.team
+      WHERE m.event_id = ?`,
+    [eventId],
+  );
+  const suspensions = db.all(
+    'SELECT * FROM player_suspensions WHERE event_id = ? ORDER BY created_at',
+    [eventId],
+  );
+
+  // 停赛台账：按「球队 + 球员」归集
+  const suspMap = new Map();
+  for (const s of suspensions) {
+    const key = `${s.registration_id || s.team_name}::${s.player}`;
+    if (!suspMap.has(key)) suspMap.set(key, []);
+    suspMap.get(key).push(s);
+  }
+  const pendingOrServed = (key, reason) => {
+    const mine = (suspMap.get(key) || []).filter((s) => s.reason === reason);
+    if (mine.some((s) => s.status === 'pending')) return 'pending';
+    if (mine.some((s) => s.status === 'served')) return 'served';
+    return '';
+  };
+  const clearedYellows = (key) => (suspMap.get(key) || [])
+    .filter((s) => s.status === 'served')
+    .reduce((n, s) => n + Number(s.cleared_yellow || 0), 0);
+
+  const map = new Map();
+  const touch = (key, base) => {
+    if (!map.has(key)) {
+      map.set(key, { player: '', playerNo: '', teamName: '', registrationId: '', redCards: 0, totalYellows: 0, ...base });
+    }
+    return map.get(key);
+  };
+
+  for (const c of cards) {
+    const key = `${c.reg_id}::${c.player}`;
+    const item = touch(key, { player: c.player, teamName: c.team_name, registrationId: c.reg_id });
+    if (!item.playerNo && c.player_no) item.playerNo = c.player_no;
+    if (c.card_type === 'red') item.redCards += 1;
+    else item.totalYellows += 1;
+  }
+  // 只登记了停赛、还没有牌记录的人也要能看到
+  for (const s of suspensions) {
+    touch(`${s.registration_id || s.team_name}::${s.player}`, {
+      player: s.player, teamName: s.team_name,
+      registrationId: s.registration_id || '', playerNo: s.player_no || '',
+    });
+  }
+
+  const rows = [...map.entries()].map(([key, item]) => {
+    const redStatus = pendingOrServed(key, 'red_card');
+    const yellowStatus = pendingOrServed(key, 'yellow_accumulation');
+    return {
+      ...item,
+      currentYellows: Math.max(0, item.totalYellows - clearedYellows(key)),
+      redStatus,
+      redStatusLabel: STATUS_LABEL[redStatus] || '',
+      yellowStatus,
+      yellowStatusLabel: STATUS_LABEL[yellowStatus] || '',
+    };
+  });
+
+  const byName = (a, b) => a.teamName.localeCompare(b.teamName, 'zh-Hans-CN')
+    || a.player.localeCompare(b.player, 'zh-Hans-CN');
+
+  const reds = rows.filter((r) => r.redCards > 0 || r.redStatus)
+    .sort((a, b) => b.redCards - a.redCards || byName(a, b))
+    .map((r, i) => ({
+      rank: i + 1,
+      player: r.player,
+      playerNo: r.playerNo,
+      teamName: r.teamName,
+      redCards: r.redCards,
+      status: r.redStatus,
+      statusLabel: r.redStatusLabel,
+    }));
+
+  const yellows = rows.filter((r) => r.totalYellows > 0 || r.yellowStatus)
+    .sort((a, b) => b.currentYellows - a.currentYellows
+      || b.totalYellows - a.totalYellows || byName(a, b))
+    .map((r, i) => ({
+      rank: i + 1,
+      player: r.player,
+      playerNo: r.playerNo,
+      teamName: r.teamName,
+      totalYellows: r.totalYellows,
+      currentYellows: r.currentYellows,
+      status: r.yellowStatus,
+      statusLabel: r.yellowStatusLabel,
+    }));
+
+  return {
+    reds,
+    yellows,
+    suspensions: suspensions.map((s) => ({
+      id: s.id,
+      registrationId: s.registration_id,
+      teamName: s.team_name,
+      player: s.player,
+      playerNo: s.player_no || '',
+      reason: s.reason,
+      reasonLabel: REASON_LABEL[s.reason] || s.reason,
+      note: s.note || '',
+      status: s.status,
+      statusLabel: STATUS_LABEL[s.status] || s.status,
+      clearedYellow: Number(s.cleared_yellow || 0),
+      createdAt: s.created_at,
+      updatedAt: s.updated_at,
+    })),
+  };
+}
