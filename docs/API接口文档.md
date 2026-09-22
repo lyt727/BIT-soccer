@@ -36,12 +36,15 @@
 | POST | /events/:id/suspensions | suspension.manage | 登记停赛（落库即为“下一轮停赛”）|
 | PATCH | /suspensions/:sid | suspension.manage | 改状态/备注；标记 `served` 时写入清零值 |
 | DELETE | /suspensions/:sid | suspension.manage | 删除误登记的停赛 |
+| POST | /events/:id/suspensions/status | suspension.manage | 榜上下拉列表用：按球队+球员直接设状态；`status` 传空字符串表示清除 |
 
 统计口径：
 
 - 红牌数、总黄牌数：整届赛事累计，永不重置；
 - 累计黄牌数 = 总黄牌数 − 该球员所有「已完成停赛」记录写入的清零值；
 - 状态（下一轮停赛 / 已完成停赛 / 已失效）完全由管理员人工维护，系统不做任何停赛规则的自动判断。
+- 红牌榜状态下拉为二选一（下一轮停赛 / 已执行停赛）；黄牌榜为三选一（不填 / 下一轮停赛 / 已执行停赛）。
+- 录入比赛结果时若有人吃红牌，系统会自动补一条「下一轮停赛」，保证红牌榜状态不空。
 
 ## 赛事
 

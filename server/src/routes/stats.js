@@ -169,8 +169,8 @@ export function registerStatsRoutes(router) {
     const body = await readJson(req);
     const reason = String(body.reason || 'red_card');
     if (!REASONS.includes(reason)) throw badRequest('停赛类型不合法');
-    const status = String(body.status || '');
-    if (!SUSP_STATUS.includes(status)) throw badRequest('停赛状态不合法');
+    const status = String(body.status ?? '');
+    if (status !== '' && !SUSP_STATUS.includes(status)) throw badRequest('停赛状态不合法');
     const player = String(body.player || '').trim();
     if (!player) throw badRequest('请选择球员');
     const registrationId = String(body.registrationId || '').trim();
@@ -187,6 +187,16 @@ export function registerStatsRoutes(router) {
         ORDER BY created_at DESC LIMIT 1`,
       [event.id, registrationId, player, reason],
     );
+    // 状态置空 = 清除这条停赛（黄牌榜的“不填”）
+    if (status === '') {
+      if (existing) {
+        await db.run('DELETE FROM player_suspensions WHERE id = ?', [existing.id]);
+        await audit(db, user, 'suspension.clear', 'player_suspension', existing.id,
+          { player, reason }, clientIp(req));
+      }
+      sendJson(res, 200, { message: '已清除停赛状态', status: '', clearedYellow: 0 });
+      return;
+    }
     let cleared = 0;
     if (status === 'served') {
       cleared = await currentYellows(db, event.id, registrationId, player, existing?.id || null);

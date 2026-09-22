@@ -228,6 +228,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       rank: i + 1,
       player: r.player,
       playerNo: r.playerNo,
+      registrationId: r.registrationId,
       teamName: r.teamName,
       totalYellows: r.totalYellows,
       currentYellows: r.currentYellows,

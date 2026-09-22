@@ -347,6 +347,40 @@ const statusDenied = await call('POST', '/api/events/evt_demo1/suspensions/statu
 });
 check('数据录入员改红牌状态被拒绝(403)', statusDenied.status === 403);
 
+// 黄牌状态三选一（不填 / 下一轮停赛 / 已执行停赛）
+const yellowRow = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.yellows.find((y) => y.totalYellows > 0);
+check('黄牌榜行数据带球队ID（供下拉设置状态）', Boolean(yellowRow?.registrationId));
+const ySet = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: yellowRow.registrationId, player: yellowRow.player,
+    playerNo: yellowRow.playerNo, reason: 'yellow_accumulation', status: 'pending',
+  },
+});
+check('管理员可把黄牌状态设为下一轮停赛', ySet.status === 200);
+const yAfter = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.yellows.find((y) => y.player === yellowRow.player);
+check('黄牌状态已更新为下一轮停赛',
+  yAfter?.status === 'pending' && yAfter?.statusLabel === '下一轮停赛');
+const yClear = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: yellowRow.registrationId, player: yellowRow.player,
+    reason: 'yellow_accumulation', status: '',
+  },
+});
+check('黄牌状态可清空（选“不填”）', yClear.status === 200);
+const yAfter2 = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.yellows.find((y) => y.player === yellowRow.player);
+check('清空后黄牌状态为空', !yAfter2?.status && !yAfter2?.statusLabel);
+check('榜单按 球队 → 球员 → 号码 排序',
+  (() => {
+    const list = cardStats.data.yellows.map((y) => `${y.teamName}|${y.player}`);
+    const sorted = [...list].sort((a, b) => a.localeCompare(b, 'zh-Hans-CN'));
+    return JSON.stringify(list) === JSON.stringify(sorted);
+  })());
+
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,
   body: {

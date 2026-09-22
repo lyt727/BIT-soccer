@@ -98,7 +98,7 @@ export async function renderLeaderboards(container, event) {
       cards.yellows.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.totalYellows, r.currentYellows, r.statusLabel || '']),
     ));
-    container.append(yellowCardsTable(cards.yellows));
+    container.append(yellowCardsTable(cards.yellows, event, reload, threshold));
     if (hasPerm(session.user, 'suspension.manage')) {
       container.append(suspensionPanel(event, cards.suspensions, reload));
     }
@@ -153,6 +153,10 @@ function staffStatTable(rows, emptyText) {
 
 // ---------------- 红黄牌榜与停赛台账 ----------------
 const SUSP_COLOR = { pending: '#c62828', served: '#0b7a43', void: '#8a8f8c' };
+const SUSP_STATUS_TEXT = { pending: '下一轮停赛', served: '已执行停赛', void: '已失效' };
+// 红牌：二选一；黄牌：不填 / 下一轮停赛 / 已执行停赛
+const RED_STATUS_OPTIONS = [['pending', '下一轮停赛'], ['served', '已执行停赛']];
+const YELLOW_STATUS_OPTIONS = [['', '不填'], ['pending', '下一轮停赛'], ['served', '已执行停赛']];
 
 function cardStatusCell(row) {
   if (!row.statusLabel) return el('span', { class: 'small muted' }, '—');
@@ -177,13 +181,14 @@ function redCardsTable(rows, event, reload) {
       el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#c62828' } }, r.redCards),
       el('td', {}, canSet
-        ? redStatusToggle(r, event, reload)
+        ? statusSelect(r, event, 'red_card', RED_STATUS_OPTIONS, reload)
         : cardStatusCell({ status: r.status, statusLabel: r.statusLabel }))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
-function yellowCardsTable(rows) {
+function yellowCardsTable(rows, event, reload, threshold) {
   if (!rows.length) return empty('暂无黄牌记录', '🟨');
+  const canSet = hasPerm(session.user, 'suspension.manage');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
       el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
@@ -194,28 +199,37 @@ function yellowCardsTable(rows) {
       el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { class: 'num' }, r.totalYellows),
-      el('td', { class: 'num', style: { fontWeight: '700', color: '#e08a00' } }, r.currentYellows),
-      el('td', {}, cardStatusCell(r))))));
+      el('td', { class: 'num' },
+        el('span', {
+          style: {
+            fontWeight: '700',
+            color: r.status === 'served' ? '#0b7a43' : '#e08a00',
+          },
+        }, r.currentYellows),
+        (threshold && !r.status && r.currentYellows >= threshold)
+          ? el('span', { class: 'small muted', style: { marginLeft: '4px' } }, '已达门槛')
+          : null),
+      el('td', {}, canSet
+        ? statusSelect(r, event, 'yellow_accumulation', YELLOW_STATUS_OPTIONS, reload)
+        : cardStatusCell(r))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
-// 红牌状态二选一：下一轮停赛 / 已执行停赛（管理员点击切换）
-function redStatusToggle(row, event, reload) {
-  const current = row.status === 'served' ? 'served' : 'pending';
-  const make = (value, label, color) => el('button', {
-    type: 'button',
+// 状态下拉列表（管理员可改，改完立即保存）
+function statusSelect(row, event, reason, options, reload) {
+  const current = row.status || '';
+  const opts = options.slice();
+  if (current && !opts.some(([v]) => v === current)) {
+    opts.push([current, SUSP_STATUS_TEXT[current] || current]);
+  }
+  return el('select', {
     style: {
-      border: 'none', borderRadius: '10px', padding: '2px 8px', fontSize: '12px',
-      cursor: 'pointer', marginRight: '4px', whiteSpace: 'nowrap',
-      background: current === value ? color : '#eef0ef',
-      color: current === value ? '#fff' : '#8a8f8c',
-      fontWeight: current === value ? '700' : '400',
+      padding: '4px 8px', borderRadius: '8px', fontSize: '13px',
+      border: '1px solid #d8dcda', background: '#fff', minWidth: '120px',
     },
-    onclick: async () => {
-      if (current === value) return;
-      if (!await confirmBox(value === 'served'
-        ? `把「${row.player}」标记为已执行停赛？`
-        : `把「${row.player}」改回下一轮停赛？`)) return;
+    onchange: async (e) => {
+      const value = e.currentTarget.value;
+      if (value === current) return;
       try {
         await api(`/events/${event.id}/suspensions/status`, {
           method: 'POST',
@@ -223,18 +237,22 @@ function redStatusToggle(row, event, reload) {
             registrationId: row.registrationId,
             player: row.player,
             playerNo: row.playerNo,
-            reason: 'red_card',
+            reason,
             status: value,
           },
         });
-        toast(value === 'served' ? '已标记为已执行停赛' : '已标记为下一轮停赛', 'success');
+        toast(value === '' ? '已清除停赛状态'
+          : (value === 'served' ? '已标记为已执行停赛' : '已标记为下一轮停赛'), 'success');
         reload();
-      } catch (err) { toast(err.message, 'error'); }
+      } catch (err) {
+        toast(err.message, 'error');
+        reload();
+      }
     },
-  }, label);
-  return el('div', { style: { whiteSpace: 'nowrap' } },
-    make('pending', '下一轮停赛', '#c62828'),
-    make('served', '已执行停赛', '#0b7a43'));
+  }, opts.map(([v, label]) => el('option', {
+    value: v,
+    selected: current === v,
+  }, label)));
 }
 
 function suspensionPanel(event, suspensions, reload) {
