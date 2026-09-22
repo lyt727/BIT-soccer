@@ -1,7 +1,7 @@
 import { api, session, hasPerm } from '../lib/api.js';
 import {
   el, clear, toast, btn, empty, openModal, badge, statBox, confirmBox,
-  reloadKeepingScroll, rebuildKeepingScroll,
+  reloadKeepingScroll, swapContentKeepingScroll,
 } from '../lib/ui.js';
 import { fileToDataUrl } from '../lib/api.js';
 import { exportExcel } from '../lib/export.js';
@@ -40,9 +40,10 @@ export async function renderStats(container, event) {
 }
 
 export async function renderLeaderboards(container, event) {
-  clear(container);
-  // 榜单/停赛名单里改完数据后原地重建，但保持当前滚动位置
-  const reload = () => rebuildKeepingScroll(() => renderLeaderboards(container, event));
+  // 先把内容渲染到离屏容器，最后一次性替换：
+  // 中途不清空页面，避免"清空→拉回顶部→重画→再滚回来"的闪烁
+  const box = el('div');
+  const reload = () => renderLeaderboards(container, event);
   try {
     const format = event.format || 'group_knockout';
     const [leagueStandings, groupStandings, scorers, cards] = await Promise.all([
@@ -52,46 +53,46 @@ export async function renderLeaderboards(container, event) {
       api(`/events/${event.id}/card-stats`),
     ]);
     if (format === 'group_knockout') {
-      container.append(el('div', { class: 'section-title' },
+      box.append(el('div', { class: 'section-title' },
         '小组赛积分榜',
         el('small', {}, '胜 3 平 1 负 0，按小组分别排名')));
       for (const group of groupStandings) {
-        container.append(sectionWithExport(
+        box.append(sectionWithExport(
           `${group.groupName} 组`, `${group.rows.length} 支球队`,
           `${event.name}-${group.groupName}组积分榜`,
           ['排名', '球队', '已赛', '胜', '平', '负', '进球', '失球', '净胜球', '积分'],
           group.rows.map((r) => [r.rank, r.teamName, r.played, r.win, r.draw, r.loss,
             r.goalsFor, r.goalsAgainst, r.goalDiff, r.points]),
         ));
-        container.append(standingsTable(group.rows));
+        box.append(standingsTable(group.rows));
       }
     } else if (format === 'league') {
-      container.append(sectionWithExport(
+      box.append(sectionWithExport(
         '联赛积分榜', `${leagueStandings.length} 支球队 · 胜 3 平 1 负 0`,
         `${event.name}-联赛积分榜`,
         ['排名', '球队', '已赛', '胜', '平', '负', '进球', '失球', '净胜球', '积分'],
         leagueStandings.map((r) => [r.rank, r.teamName, r.played, r.win, r.draw, r.loss,
           r.goalsFor, r.goalsAgainst, r.goalDiff, r.points]),
       ));
-      container.append(standingsTable(leagueStandings));
+      box.append(standingsTable(leagueStandings));
     }
-    container.append(sectionWithExport(
+    box.append(sectionWithExport(
       '射手榜', '', `${event.name}-射手榜`,
       ['排名', '球员', '球队', '总进球', '点球进球'],
       scorers.map((r) => [r.rank, r.player, r.teamName, r.goals, r.penalties]),
     ));
-    container.append(scorersTable(scorers));
+    box.append(scorersTable(scorers));
 
-    container.append(sectionWithExport(
+    box.append(sectionWithExport(
       '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
       ['球队', '球员', '号码', '红牌数', '停赛场次', '状态', '备注'],
       cards.reds.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.redCards, `${r.matches || 1} 场`, r.statusLabel || '', r.note || '']),
     ));
-    container.append(redCardsTable(cards.reds, event, reload));
+    box.append(redCardsTable(cards.reds, event, reload));
     const canSetThreshold = hasPerm(session.user, 'event.status.update');
     const threshold = Number(cards.yellowThreshold) || 2;
-    container.append(sectionWithExport(
+    box.append(sectionWithExport(
       '黄牌榜',
       el('span', {},
         '累计 ',
@@ -113,13 +114,14 @@ export async function renderLeaderboards(container, event) {
       cards.yellows.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.totalYellows, r.currentYellows, r.statusLabel || '', r.note || '']),
     ));
-    container.append(yellowCardsTable(cards.yellows, event, reload, threshold));
+    box.append(yellowCardsTable(cards.yellows, event, reload, threshold));
     if (hasPerm(session.user, 'suspension.manage')) {
-      container.append(suspensionPanel(event, cards.suspensions, reload));
+      box.append(suspensionPanel(event, cards.suspensions, reload));
     }
   } catch (err) {
-    container.append(empty(err.message, '⚠️'));
+    box.append(empty(err.message, '⚠️'));
   }
+  swapContentKeepingScroll(container, box);
 }
 
 export async function renderStaffStats(container, event) {

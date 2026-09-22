@@ -46,16 +46,26 @@ export function restoreScrollIfNeeded() {
     y = Number(sessionStorage.getItem(SCROLL_KEY) || 0);
     if (y) sessionStorage.removeItem(SCROLL_KEY);
   } catch { y = 0; }
-  if (y > 0) {
-    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
-  }
+  if (!y) return;
+  // 同步执行，和渲染在同一帧完成，用户看不到"先到顶再滚回来"
+  window.scrollTo(0, y);
+  requestAnimationFrame(() => {
+    if (Math.abs((window.scrollY || 0) - y) > 8) window.scrollTo(0, y);
+  });
 }
 
-// 同一页面内重建内容时用：记住位置 → 重建 → 恢复
-export async function rebuildKeepingScroll(rebuild) {
+// 页面内局部重建时用：把离屏渲染好的内容一次性替换进容器，并保持滚动位置
+// 关键点是"先渲染好再替换"，且替换瞬间冻结页面高度，
+// 这样既不会出现空白，也不会因为页面变矮被浏览器拉回顶部。
+export function swapContentKeepingScroll(container, box) {
+  const doc = document.documentElement;
   const y = window.scrollY || 0;
-  await rebuild();
-  requestAnimationFrame(() => window.scrollTo(0, y));
+  const prevMin = doc.style.minHeight;
+  doc.style.minHeight = `${doc.scrollHeight}px`;
+  clear(container);
+  while (box.firstChild) container.append(box.firstChild);
+  doc.style.minHeight = prevMin;
+  if (y > 0) window.scrollTo(0, y);
 }
 
 export function toast(message, type = 'info', ms = 2400) {
