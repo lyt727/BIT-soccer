@@ -255,13 +255,10 @@ export function registerMatchRoutes(router) {
     const user = await authUser(req);
     const db = getDb();
     const match = await loadMatch(db, params.id);
-    if ((match.stage || 'group') === 'knockout') {
-      requireAction(user, 'result.record');
-      await assertEventScope(db, user, 'result.record', match.event_id);
-    } else {
-      requireAction(user, 'match.manage');
-      await assertEventScope(db, user, 'match.manage', match.event_id);
-    }
+    // 比赛信息编辑：管理员与数据录入员都可以，参赛队员只读
+    requireAction(user, 'result.record');
+    await assertEventScope(db, user, 'result.record', match.event_id);
+    const event = await loadEvent(db, match.event_id);
     const body = await readJson(req);
     const s = validateSchedule(body, true);
     const next = {};
@@ -278,7 +275,9 @@ export function registerMatchRoutes(router) {
     if (body.assistant2 !== undefined) next.assistant2 = String(body.assistant2).trim();
     if (body.fourthOfficial !== undefined) next.fourth_official = String(body.fourthOfficial).trim();
     if (body.specialNote !== undefined) next.special_note = String(body.specialNote).trim();
-    if (body.groupName !== undefined && (match.stage || 'group') === 'group') {
+    // 只有「小组赛+淘汰赛」赛制才需要选小组；单循环联赛没有分组
+    if (body.groupName !== undefined && (match.stage || 'group') === 'group'
+      && (event.format || 'group_knockout') === 'group_knockout') {
       const g = String(body.groupName).trim().toUpperCase();
       if (!/^[A-F]$/.test(g)) throw badRequest('小组赛请选择小组（A-F）');
       next.group_name = g;
@@ -307,13 +306,9 @@ export function registerMatchRoutes(router) {
     const user = await authUser(req);
     const db = getDb();
     const match = await loadMatch(db, params.id);
-    if ((match.stage || 'group') === 'knockout') {
-      requireAction(user, 'result.record');
-      await assertEventScope(db, user, 'result.record', match.event_id);
-    } else {
-      requireAction(user, 'match.manage');
-      await assertEventScope(db, user, 'match.manage', match.event_id);
-    }
+    // 删除比赛同样对管理员与数据录入员开放
+    requireAction(user, 'result.record');
+    await assertEventScope(db, user, 'result.record', match.event_id);
     const wasFinished = match.status === 'finished';
     await db.run('DELETE FROM matches WHERE id = ?', [match.id]);
     await audit(db, user, 'match.delete', 'match', match.id,

@@ -76,7 +76,8 @@ function matchCard(m, isAdmin, event, matches, canAi) {
     if (m.summary.redCards) summary.push(badge(`红牌 ${m.summary.redCards}`, 'rejected'));
     if (m.summary.substitutions) summary.push(badge(`换人 ${m.summary.substitutions}`, 'pending'));
   }
-  const canManage = isAdmin || (canAi && (m.stage || 'group') === 'knockout');
+  // 比赛信息编辑：管理员与数据录入员都可以，参赛队员只读
+  const canManage = hasPerm(session.user, 'result.record') && Boolean(event.staffRole);
   const actions = canManage ? el('div', { class: 'row' },
     btn('编辑', {
       cls: 'sm', type: 'outline', onClick: () => editMatchFlow(event, m),
@@ -112,7 +113,7 @@ function matchCard(m, isAdmin, event, matches, canAi) {
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
         }) : null,
-        canAi ? btn('✎ 特殊情况说明（选填）', {
+    canAi ? btn('✎ 特殊情况说明', {
           type: 'outline', cls: 'sm', onClick: () => editNoteModal(m),
         }) : null),
     ),
@@ -262,7 +263,7 @@ async function editMatchFlow(event, match) {
   let teams = [];
   try { teams = await teamOptions(event); } catch (err) { toast(err.message, 'error'); return; }
   const modal = openModal({
-    title: '编辑比赛',
+    title: '编辑比赛信息',
     body: el('p', { class: 'small muted' },
       '已完赛比赛可修改赛程信息，已录入比分与统计保留。'),
   });
@@ -346,21 +347,21 @@ function matchFormBody(teams, match, forcedStage = null, format = 'group_knockou
     field('主队', selA),
     field('客队', selB),
     el('div', { class: 'row', style: { gap: '10px' } },
-      el('div', { style: { flex: '1' } }, field('日期（选填）', el('input', {
+      el('div', { style: { flex: '1' } }, field('日期', el('input', {
         id: 'mf-date', type: 'date', value: match?.date || '',
       }), false)),
-      el('div', { style: { flex: '1' } }, field('时间（选填）', el('input', {
+      el('div', { style: { flex: '1' } }, field('时间', el('input', {
         id: 'mf-time', type: 'time', value: match?.time || '',
       }), false))),
-    field('场地（选填）', el('input', {
+      field('场地', el('input', {
       id: 'mf-venue', value: match?.venue || '', placeholder: '如：西操场 1 号场',
     }), false),
     el('div', { class: 'grid cols-2', style: { gap: '8px' } },
-      field('主裁判（选填）', el('input', { id: 'mf-referee', value: match?.referee || '', placeholder: '主裁判姓名' }), false),
-      field('第一助理裁判（选填）', el('input', { id: 'mf-assistant1', value: match?.assistant1 || '', placeholder: '一助姓名' }), false),
-      field('第二助理裁判（选填）', el('input', { id: 'mf-assistant2', value: match?.assistant2 || '', placeholder: '二助姓名' }), false),
-      field('第四官员（选填）', el('input', { id: 'mf-fourth', value: match?.fourthOfficial || '', placeholder: '第四官员姓名' }), false)),
-    field('特殊情况备注（仅管理员可见编辑）', el('textarea', {
+      field('主裁判', el('input', { id: 'mf-referee', value: match?.referee || '', placeholder: '主裁判姓名' }), false),
+      field('第一助理裁判', el('input', { id: 'mf-assistant1', value: match?.assistant1 || '', placeholder: '一助姓名' }), false),
+      field('第二助理裁判', el('input', { id: 'mf-assistant2', value: match?.assistant2 || '', placeholder: '二助姓名' }), false),
+      field('第四官员', el('input', { id: 'mf-fourth', value: match?.fourthOfficial || '', placeholder: '第四官员姓名' }), false)),
+      field('特殊情况备注', el('textarea', {
       id: 'mf-note', rows: 2, value: match?.specialNote || '', placeholder: '如：比赛延期/中断/补时/申诉等',
     }), false),
     el('div', { class: 'grid cols-2', style: { gap: '8px', marginTop: '12px' } },
@@ -371,7 +372,7 @@ function matchFormBody(teams, match, forcedStage = null, format = 'group_knockou
         el('span', {}, `${match?.teamB?.name || '客队'} 比赛服颜色`),
         el('input', { id: 'mf-colorB', value: match?.lineups?.B?.color || '', placeholder: '如：蓝黑' }))),
     el('div', { class: 'section-title', style: { marginTop: '14px' } },
-      '双方名单（选填，每行：号码 姓名）'),
+        '双方名单（每行：号码 姓名）'),
     el('div', { class: 'grid cols-2' },
       lineupEditor('主队 · 首发', 'mf-lineupA-start', match?.lineups?.A?.starting || []),
       lineupEditor('主队 · 替补', 'mf-lineupA-bench', match?.lineups?.A?.substitutes || []),
@@ -447,7 +448,7 @@ async function deleteMatch(match) {
 
 function editNoteModal(m) {
   const modal = openModal({
-    title: `特殊情况说明（选填）· ${m.teamA.name} vs ${m.teamB.name}`,
+    title: `特殊情况说明 · ${m.teamA.name} vs ${m.teamB.name}`,
     body: el('div', {},
       el('p', { class: 'small muted' },
         '管理员或数据录入员可编辑，例如：延期、中断、补赛、争议判罚、空场等；参赛队员仅可阅读。'),

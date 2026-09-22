@@ -185,5 +185,75 @@ ok('小组赛未选小组时仍被拒绝', noGroup.status === 400, noGroup.data?
 const gkStandings = await call('GET', `/api/events/${gk.id}/standings-by-group`, { token: adminToken });
 ok('分组积分榜仍按小组返回', gkStandings.data?.length === 2);
 
+// ============ 四、抽签范围 / 手动排赛 / 比赛编辑权限 ============
+console.log('\n【四、抽签范围、手动排赛与比赛编辑权限】');
+{
+  const created = await call('POST', '/api/events', {
+    token: adminToken,
+    body: { name: `抽签范围${stamp}`, season: '2026', format: 'group_knockout' },
+  });
+  const eid = created.data.id;
+  await call('PATCH', `/api/events/${eid}/status`, { token: adminToken, body: { status: 'signup' } });
+  const regIds = [];
+  for (let i = 1; i <= 3; i += 1) {
+    const reg = await call('POST', `/api/events/${eid}/registrations`, {
+      token: adminToken,
+      body: {
+        teamName: `范围队${i}号`,
+        jerseyTop: '红', jerseyShorts: '黑', jerseySocks: '白',
+        members: [
+          { name: `领队${i}`, phone: `138${stamp}${String(i).padStart(2, '0')}`,
+            roles: ['manager'], jerseyNo: '', file: { originalName: 'a.jpg', dataUrl: PNG } },
+          { name: `球员${i}`, phone: `138${stamp}${String(i + 50).padStart(2, '0')}`,
+            roles: ['player'], jerseyNo: '7', file: { originalName: 'b.jpg', dataUrl: PNG } },
+        ],
+      },
+    });
+    regIds.push(reg.data?.id);
+    // 只审核通过前两支，第三支保持待审核
+    if (i <= 2 && reg.data?.id) {
+      await call('POST', `/api/registrations/${reg.data.id}/review`,
+        { token: adminToken, body: { action: 'approve' } });
+    }
+  }
+  await call('PATCH', `/api/events/${eid}/status`, { token: adminToken, body: { status: 'live' } });
+
+  const d = await call('POST', `/api/events/${eid}/draw`,
+    { token: adminToken, body: { groupCount: 2 } });
+  const drawn = (d.data?.groups || []).flatMap((g) => g.teams.map((t) => t.teamName));
+  ok('抽签只覆盖审核通过的球队（未通过的被排除）',
+    drawn.length === 2 && !drawn.includes('范围队3号'),
+    `抽签结果：${drawn.join('、') || d.data?.error}`);
+
+  const manual = await call('POST', `/api/events/${eid}/matches`, {
+    token: adminToken,
+    body: { stage: 'group', groupName: 'A', teamAId: regIds[0], teamBId: regIds[1] },
+  });
+  ok('不抽签也能手动添加赛程', manual.status === 201, manual.data?.error || '');
+
+  // 把数据录入员指派到该赛事
+  await call('POST', `/api/events/${eid}/staff`,
+    { token: adminToken, body: { phone: '13900000003', eventRole: 'data_operator' } });
+  const opTok = (await call('POST', '/api/auth/login-password',
+    { body: { phone: '13900000003', password: '123456' } })).data.token;
+  const pTok = (await call('POST', '/api/auth/login-password',
+    { body: { phone: '13800138001', password: '123456' } })).data.token;
+
+  const edited = await call('PATCH', `/api/matches/${manual.data?.id}`,
+    { token: opTok, body: { venue: '西操场 2 号场', referee: '赵明' } });
+  ok('数据录入员可编辑比赛信息', edited.status === 200, edited.data?.error || '');
+  ok('编辑比赛时不必填日期时间等选填项',
+    edited.status === 200 && edited.data?.venue === '西操场 2 号场');
+
+  const playerDenied = await call('PATCH', `/api/matches/${manual.data?.id}`,
+    { token: pTok, body: { venue: '越权修改' } });
+  ok('参赛球员编辑比赛被拒绝(403)', playerDenied.status === 403, `status=${playerDenied.status}`);
+  const playerDel = await call('DELETE', `/api/matches/${manual.data?.id}`, { token: pTok });
+  ok('参赛球员删除比赛被拒绝(403)', playerDel.status === 403);
+
+  const delByOp = await call('DELETE', `/api/matches/${manual.data?.id}`, { token: opTok });
+  ok('数据录入员可删除比赛', delByOp.status === 200, delByOp.data?.error || '');
+}
+
 console.log(`\n共 ${pass + fail} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);
