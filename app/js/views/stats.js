@@ -156,7 +156,7 @@ const SUSP_COLOR = { pending: '#c62828', served: '#0b7a43', void: '#8a8f8c' };
 const SUSP_STATUS_TEXT = { pending: '下一轮停赛', served: '已执行停赛', void: '已失效' };
 // 红牌：二选一；黄牌：不填 / 下一轮停赛 / 已执行停赛
 const RED_STATUS_OPTIONS = [['pending', '下一轮停赛'], ['served', '已执行停赛']];
-const YELLOW_STATUS_OPTIONS = [['', '不填'], ['pending', '下一轮停赛'], ['served', '已执行停赛']];
+const YELLOW_STATUS_OPTIONS = [['', '-'], ['pending', '下一轮停赛'], ['served', '已执行停赛']];
 
 function cardStatusCell(row) {
   if (!row.statusLabel) return el('span', { class: 'small muted' }, '—');
