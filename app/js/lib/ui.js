@@ -6,7 +6,8 @@ export function el(tag, props = {}, ...children) {
     else if (key === 'dataset') Object.assign(node.dataset, value);
     else if (key === 'html') node.innerHTML = value;
     else if (key.startsWith('on') && typeof value === 'function') {
-      node.addEventListener(key.slice(2), value);
+      // 事件名大小写不敏感：onclick / onClick 都按 'click' 挂载
+      node.addEventListener(key.slice(2).toLowerCase(), value);
     } else if (key === 'style' && typeof value === 'object') {
       Object.assign(node.style, value);
     } else if (key in node) {

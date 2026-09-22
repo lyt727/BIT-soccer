@@ -69,8 +69,8 @@ export async function renderLeaderboards(container, event) {
 
     container.append(sectionWithExport(
       '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
-      ['排名', '号码', '球员', '球队', '红牌数', '状态'],
-      cards.reds.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
+      ['球队', '球员', '号码', '红牌数', '状态'],
+      cards.reds.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.redCards, r.statusLabel || '']),
     ));
     container.append(redCardsTable(cards.reds, event, reload));
@@ -88,14 +88,14 @@ export async function renderLeaderboards(container, event) {
               padding: '1px 9px', fontSize: '12px', fontWeight: '700', cursor: 'pointer',
               margin: '0 2px',
             },
-            onClick: () => openThresholdModal(event, threshold, reload),
+            onclick: () => openThresholdModal(event, threshold, reload),
           }, `${threshold} 张`)
           : el('b', {}, `${threshold} 张`),
         '黄牌停赛一场',
         canSetThreshold ? '（点击数字可修改）' : ''),
       `${event.name}-黄牌榜`,
-      ['排名', '号码', '球员', '球队', '总黄牌数', '累计黄牌数', '状态'],
-      cards.yellows.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
+      ['球队', '球员', '号码', '总黄牌数', '累计黄牌数', '状态'],
+      cards.yellows.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.totalYellows, r.currentYellows, r.statusLabel || '']),
     ));
     container.append(yellowCardsTable(cards.yellows));
@@ -169,12 +169,12 @@ function redCardsTable(rows, event, reload) {
   const canSet = hasPerm(session.user, 'suspension.manage');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
-      el('th', {}, '号码'), el('th', {}, '球员'),
-      el('th', {}, '球队'), el('th', { class: 'num' }, '红牌'), el('th', {}, '状态'))),
+      el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
+      el('th', { class: 'num' }, '红牌'), el('th', {}, '状态'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
-      el('td', { class: 'num' }, r.playerNo || '—'),
-      el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', {}, r.teamName),
+      el('td', { style: { fontWeight: '500' } }, r.player),
+      el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#c62828' } }, r.redCards),
       el('td', {}, canSet
         ? redStatusToggle(r, event, reload)
@@ -186,13 +186,13 @@ function yellowCardsTable(rows) {
   if (!rows.length) return empty('暂无黄牌记录', '🟨');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
-      el('th', {}, '号码'), el('th', {}, '球员'), el('th', {}, '球队'),
+      el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
       el('th', { class: 'num' }, '总黄牌'), el('th', { class: 'num' }, '累计黄牌'),
       el('th', {}, '状态'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
-      el('td', { class: 'num' }, r.playerNo || '—'),
-      el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', {}, r.teamName),
+      el('td', { style: { fontWeight: '500' } }, r.player),
+      el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { class: 'num' }, r.totalYellows),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#e08a00' } }, r.currentYellows),
       el('td', {}, cardStatusCell(r))))));
@@ -211,7 +211,7 @@ function redStatusToggle(row, event, reload) {
       color: current === value ? '#fff' : '#8a8f8c',
       fontWeight: current === value ? '700' : '400',
     },
-    onClick: async () => {
+    onclick: async () => {
       if (current === value) return;
       if (!await confirmBox(value === 'served'
         ? `把「${row.player}」标记为已执行停赛？`
@@ -241,7 +241,7 @@ function suspensionPanel(event, suspensions, reload) {
   const box = el('div', {});
   box.append(el('div', { class: 'row between wrap', style: { margin: '20px 2px 10px' } },
     el('div', { class: 'section-title', style: { margin: 0 } }, '停赛名单',
-      el('small', {}, '全部人工维护：登记后为「下一轮停赛」，赛后标记「已完成停赛」即自动清零累计黄牌')),
+      el('small', {}, '全部人工维护：登记后为「下一轮停赛」，赛后标记「已执行停赛」即自动清零累计黄牌')),
     btn('＋ 登记停赛', {
       type: 'primary', cls: 'sm',
       onClick: () => openSuspensionForm(event, reload),
@@ -264,16 +264,16 @@ function suspensionPanel(event, suspensions, reload) {
     box.append(el('div', { class: 'list-item' },
       el('div', { class: 'main' },
         el('div', { class: 'row wrap' },
-          el('span', { class: 'title' }, `${s.player}${s.playerNo ? ` · ${s.playerNo} 号` : ''}`),
-          el('span', { class: 'small muted' }, s.teamName),
+          el('span', { class: 'title' },
+            `${s.teamName} · ${s.player}${s.playerNo ? ` · ${s.playerNo} 号` : ''}`),
           cardStatusCell(s)),
         el('div', { class: 'desc' },
           `${s.reasonLabel}${s.clearedYellow ? ` · 已清零累计黄牌 ${s.clearedYellow} 张` : ''}${s.note ? ` · ${s.note}` : ''}`)),
       el('div', { class: 'row wrap' },
-        s.status !== 'served' ? btn('已完成停赛', {
+        s.status !== 'served' ? btn('已执行停赛', {
           cls: 'sm', type: 'outline',
           onClick: () => patch(s, 'served',
-            `把「${s.player}」标记为已完成停赛？累计黄牌数将清零（总黄牌数不变）。`),
+            `把「${s.player}」标记为已执行停赛？累计黄牌数将清零（总黄牌数不变）。`),
         }) : null,
         s.status !== 'void' ? btn('标记失效', {
           cls: 'sm', type: 'outline',
@@ -366,7 +366,7 @@ async function openSuspensionForm(event, onDone) {
     title: '登记停赛',
     body: el('div', {},
       el('p', { class: 'small muted' },
-        '登记后状态为「下一轮停赛」。比赛结束后回到这里点「已完成停赛」，累计黄牌会自动清零。'),
+      '登记后状态为「下一轮停赛」。比赛结束后回到这里点「已执行停赛」，累计黄牌会自动清零。'),
       field('球队', teamSel),
       field('球员', playerSel),
       field('停赛类型', reasonSel),

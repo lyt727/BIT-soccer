@@ -203,11 +203,14 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
     };
   });
 
-  const byName = (a, b) => a.teamName.localeCompare(b.teamName, 'zh-Hans-CN')
-    || a.player.localeCompare(b.player, 'zh-Hans-CN');
+  // 榜单按 球队 → 球员 → 号码 排序
+  const byTeamPlayerNo = (a, b) =>
+    a.teamName.localeCompare(b.teamName, 'zh-Hans-CN')
+    || a.player.localeCompare(b.player, 'zh-Hans-CN')
+    || (Number(a.playerNo) || 999) - (Number(b.playerNo) || 999);
 
   const reds = rows.filter((r) => r.redCards > 0 || r.hasRedRecord)
-    .sort((a, b) => b.redCards - a.redCards || byName(a, b))
+    .sort(byTeamPlayerNo)
     .map((r, i) => ({
       rank: i + 1,
       player: r.player,
@@ -220,8 +223,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
     }));
 
   const yellows = rows.filter((r) => r.totalYellows > 0 || r.yellowStatus)
-    .sort((a, b) => b.currentYellows - a.currentYellows
-      || b.totalYellows - a.totalYellows || byName(a, b))
+    .sort(byTeamPlayerNo)
     .map((r, i) => ({
       rank: i + 1,
       player: r.player,
