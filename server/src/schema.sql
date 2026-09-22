@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS events (
   season TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signup','live','ended')),
+  format TEXT NOT NULL DEFAULT 'group_knockout',
   yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2,
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS matches (
   stage TEXT NOT NULL DEFAULT 'group' CHECK (stage IN ('group','knockout')),
   group_name TEXT NOT NULL DEFAULT '',
   knockout_round TEXT NOT NULL DEFAULT '',
+  round_name TEXT NOT NULL DEFAULT '',
   match_date TEXT NOT NULL,
   start_time TEXT NOT NULL,
   venue TEXT NOT NULL,

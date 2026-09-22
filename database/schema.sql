@@ -27,11 +27,14 @@ CREATE TABLE IF NOT EXISTS events (
   description TEXT,
   status      TEXT NOT NULL DEFAULT 'pending'
               CHECK (status IN ('pending','signup','live','ended')),
+  format      TEXT NOT NULL DEFAULT 'group_knockout',
   yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2,
   created_by  TEXT NOT NULL REFERENCES users(id),
   created_at  TEXT NOT NULL
 );
 ALTER TABLE events ADD COLUMN IF NOT EXISTS yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2;
+ALTER TABLE events ADD COLUMN IF NOT EXISTS format TEXT NOT NULL DEFAULT 'group_knockout';
+ALTER TABLE matches ADD COLUMN IF NOT EXISTS round_name TEXT NOT NULL DEFAULT '';
 
 CREATE TABLE IF NOT EXISTS event_staff (
   event_id    TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,

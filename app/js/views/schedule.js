@@ -42,7 +42,7 @@ function exportSchedule(matches, event) {
     `${event.name}-赛程安排`,
     '赛程安排',
     ['日期', '时间', '主队', '客队', '比分', '状态', '场地',
-      '阶段', '组别', '淘汰赛轮次', '主裁判', '第一助理', '第二助理', '第四官员'],
+      '阶段', '组别', '轮次', '主裁判', '第一助理', '第二助理', '第四官员'],
     matches.map((m) => [
       m.date,
       m.time,
@@ -51,9 +51,10 @@ function exportSchedule(matches, event) {
       m.status === 'finished' ? `${m.scoreA}:${m.scoreB}` : '未开赛',
       m.status === 'finished' ? '已完赛' : '未开赛',
       m.venue || '',
-      m.stage === 'knockout' ? '淘汰赛' : '小组赛',
+      m.stage === 'knockout' ? '淘汰赛'
+        : ((event.format || 'group_knockout') === 'league' ? '联赛' : '小组赛'),
       m.stage === 'knockout' ? '' : (m.groupName || ''),
-      m.stage === 'knockout' ? (m.knockoutRound || '') : '',
+      m.stage === 'knockout' ? (m.knockoutRound || '') : (m.roundName || ''),
       m.referee || '',
       m.assistant1 || '',
       m.assistant2 || '',
@@ -86,7 +87,11 @@ function matchCard(m, isAdmin, event, matches, canAi) {
       el('div', { class: 'row wrap' },
         el('b', {}, `${m.date} ${m.time}`),
         statusBadge(m.status),
-        badge(m.stage === 'knockout' ? `淘汰赛·${m.knockoutRound || '待定'}` : `小组赛·${m.groupName || '-'}组`,
+        badge(m.stage === 'knockout'
+          ? `淘汰赛·${m.knockoutRound || '待定'}`
+          : ((event.format || 'group_knockout') === 'league'
+            ? `联赛${m.roundName ? `·${m.roundName}` : ''}`
+            : `小组赛·${m.groupName || '-'}组`),
           m.stage === 'knockout' ? 'rejected' : 'player')),
       el('div', { class: 'row', style: { margin: '8px 0', gap: '14px' } },
         el('span', { style: { flex: '1', textAlign: 'right' } }, m.teamA.name),
@@ -236,7 +241,7 @@ async function addMatchFlow(event, forcedStage = null) {
   if (teams.length < 2) { toast('已通过球队不足 2 支，无法排赛', 'error'); return; }
   const modal = openModal({
     title: forcedStage === 'knockout' ? '添加淘汰赛' : '添加比赛',
-    body: matchFormBody(teams, null, forcedStage),
+    body: matchFormBody(teams, null, forcedStage, event.format || 'group_knockout'),
   });
   const submit = async () => {
     try {
@@ -260,7 +265,7 @@ async function editMatchFlow(event, match) {
       '已完赛比赛可修改赛程信息，已录入比分与统计保留。'),
   });
   clear(modal.body);
-  modal.body.append(matchFormBody(teams, match));
+  modal.body.append(matchFormBody(teams, match, null, event.format || 'group_knockout'));
   const submit = async () => {
     try {
       const payload = collectMatchForm(modal.body);
@@ -274,7 +279,12 @@ async function editMatchFlow(event, match) {
     btn('保存', { type: 'primary', onClick: submit })]);
 }
 
-function matchFormBody(teams, match, forcedStage = null) {
+const KO_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];
+const CUSTOM_ROUND = '__custom__';
+
+function matchFormBody(teams, match, forcedStage = null, format = 'group_knockout') {
+  const isLeague = format === 'league';
+  const isKnockoutOnly = format === 'knockout';
   const selA = el('select', { id: 'mf-a' }, teams.map((t) => el('option', { value: t.id }, t.teamName)));
   const selB = el('select', { id: 'mf-b' }, teams.map((t) => el('option', { value: t.id }, t.teamName)));
   if (match) {
@@ -282,7 +292,7 @@ function matchFormBody(teams, match, forcedStage = null) {
     selB.value = match.teamB.registrationId;
   }
   if (!match && teams[1]) selB.value = teams[1].id;
-  const initialStage = match?.stage || forcedStage || 'group';
+  const initialStage = match?.stage || forcedStage || (isKnockoutOnly ? 'knockout' : 'group');
   const stageSel = el('select', { id: 'mf-stage', disabled: Boolean(match) },
     el('option', { value: 'group', selected: initialStage === 'group' }, '小组赛'),
     el('option', { value: 'knockout', selected: initialStage === 'knockout' }, '淘汰赛'));
@@ -290,22 +300,47 @@ function matchFormBody(teams, match, forcedStage = null) {
     ['A', 'B', 'C', 'D', 'E', 'F'].map((g) => el('option', {
       value: g, selected: (match?.groupName || 'A') === g,
     }, `${g} 组`)));
+  const currentKo = match?.knockoutRound || '1/8决赛';
   const roundSel = el('select', { id: 'mf-round' },
-    ['1/8决赛', '1/4决赛', '半决赛', '决赛'].map((r) => el('option', {
-      value: r, selected: (match?.knockoutRound || '1/8决赛') === r,
-    }, r)));
+    KO_ROUNDS.map((r) => el('option', {
+      value: r, selected: currentKo === r,
+    }, r)),
+    el('option', {
+      value: CUSTOM_ROUND,
+      selected: Boolean(match?.knockoutRound) && !KO_ROUNDS.includes(currentKo),
+    }, '自定义…'));
+  const customRound = el('input', {
+    id: 'mf-round-custom',
+    placeholder: '如：八强附加赛',
+    value: KO_ROUNDS.includes(currentKo) ? '' : (match?.knockoutRound || ''),
+  });
+  const leagueRound = el('input', {
+    id: 'mf-league-round',
+    placeholder: '如：第1轮（留空则不显示轮次）',
+    value: match?.roundName || '',
+  });
   const groupWrap = field('小组', groupSel);
   const roundWrap = field('淘汰赛轮次', roundSel);
+  const customWrap = field('自定义轮次名称', customRound);
+  const leagueRoundWrap = field('轮次', leagueRound);
+  const stageWrap = field('比赛阶段', stageSel);
+  if (isLeague || isKnockoutOnly) stageWrap.style.display = 'none';
   const sync = () => {
-    groupWrap.style.display = stageSel.value === 'group' ? 'block' : 'none';
-    roundWrap.style.display = stageSel.value === 'knockout' ? 'block' : 'none';
+    const ko = isKnockoutOnly || (!isLeague && stageSel.value === 'knockout');
+    groupWrap.style.display = (!isLeague && !ko) ? 'block' : 'none';
+    roundWrap.style.display = ko ? 'block' : 'none';
+    customWrap.style.display = (ko && roundSel.value === CUSTOM_ROUND) ? 'block' : 'none';
+    leagueRoundWrap.style.display = isLeague ? 'block' : 'none';
   };
   stageSel.addEventListener('change', sync);
+  roundSel.addEventListener('change', sync);
   sync();
   return el('div', {},
-    field('比赛阶段', stageSel),
+    stageWrap,
     groupWrap,
+    leagueRoundWrap,
     roundWrap,
+    customWrap,
     field('主队', selA),
     field('客队', selB),
     el('div', { class: 'row', style: { gap: '10px' } },
@@ -367,7 +402,11 @@ function collectMatchForm(body) {
     teamBId: body.querySelector('#mf-b').value,
     stage: body.querySelector('#mf-stage').value,
     groupName: body.querySelector('#mf-group').value,
-    knockoutRound: body.querySelector('#mf-round').value,
+    knockoutRound: (() => {
+      const v = body.querySelector('#mf-round').value;
+      return v === CUSTOM_ROUND ? body.querySelector('#mf-round-custom').value.trim() : v;
+    })(),
+    roundName: body.querySelector('#mf-league-round').value.trim(),
     date: body.querySelector('#mf-date').value,
     time: body.querySelector('#mf-time').value,
     venue: body.querySelector('#mf-venue').value.trim(),

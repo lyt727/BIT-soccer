@@ -42,23 +42,36 @@ export async function renderLeaderboards(container, event) {
   clear(container);
   const reload = () => renderLeaderboards(container, event);
   try {
-    const [groupStandings, scorers, cards] = await Promise.all([
-      api(`/events/${event.id}/standings-by-group`),
+    const format = event.format || 'group_knockout';
+    const [leagueStandings, groupStandings, scorers, cards] = await Promise.all([
+      format === 'league' ? api(`/events/${event.id}/standings`) : Promise.resolve(null),
+      format === 'group_knockout' ? api(`/events/${event.id}/standings-by-group`) : Promise.resolve(null),
       api(`/events/${event.id}/scorers`),
       api(`/events/${event.id}/card-stats`),
     ]);
-    container.append(el('div', { class: 'section-title' },
-      '小组赛积分榜',
-      el('small', {}, '胜 3 平 1 负 0，按小组分别排名')));
-    for (const group of groupStandings) {
+    if (format === 'group_knockout') {
+      container.append(el('div', { class: 'section-title' },
+        '小组赛积分榜',
+        el('small', {}, '胜 3 平 1 负 0，按小组分别排名')));
+      for (const group of groupStandings) {
+        container.append(sectionWithExport(
+          `${group.groupName} 组`, `${group.rows.length} 支球队`,
+          `${event.name}-${group.groupName}组积分榜`,
+          ['排名', '球队', '已赛', '胜', '平', '负', '进球', '失球', '净胜球', '积分'],
+          group.rows.map((r) => [r.rank, r.teamName, r.played, r.win, r.draw, r.loss,
+            r.goalsFor, r.goalsAgainst, r.goalDiff, r.points]),
+        ));
+        container.append(standingsTable(group.rows));
+      }
+    } else if (format === 'league') {
       container.append(sectionWithExport(
-        `${group.groupName} 组`, `${group.rows.length} 支球队`,
-        `${event.name}-${group.groupName}组积分榜`,
+        '联赛积分榜', `${leagueStandings.length} 支球队 · 胜 3 平 1 负 0`,
+        `${event.name}-联赛积分榜`,
         ['排名', '球队', '已赛', '胜', '平', '负', '进球', '失球', '净胜球', '积分'],
-        group.rows.map((r) => [r.rank, r.teamName, r.played, r.win, r.draw, r.loss,
+        leagueStandings.map((r) => [r.rank, r.teamName, r.played, r.win, r.draw, r.loss,
           r.goalsFor, r.goalsAgainst, r.goalDiff, r.points]),
       ));
-      container.append(standingsTable(group.rows));
+      container.append(standingsTable(leagueStandings));
     }
     container.append(sectionWithExport(
       '射手榜', '', `${event.name}-射手榜`,

@@ -102,6 +102,7 @@ async function detailsOfMatch(db, m) {
     stage: m.stage || 'group',
     groupName: m.group_name || '',
     knockoutRound: m.knockout_round || '',
+    roundName: m.round_name || '',
     date: m.match_date,
     time: m.start_time,
     venue: m.venue,
@@ -148,12 +149,18 @@ function cleanLineup(v) {
   };
 }
 
-function validateSchedule(body, partial = false) {
+const KNOCKOUT_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];
+
+function validateSchedule(body, partial = false, format = 'group_knockout') {
   const teamAId = partial ? null : String(body.teamAId || '');
   const teamBId = partial ? null : String(body.teamBId || '');
-  const stage = body.stage === 'knockout' ? 'knockout' : 'group';
+  // 赛制决定比赛归属：纯联赛全部是联赛场次，纯淘汰赛全部是淘汰赛场次
+  let stage = body.stage === 'knockout' ? 'knockout' : 'group';
+  if (format === 'league') stage = 'group';
+  if (format === 'knockout') stage = 'knockout';
   const groupName = String(body.groupName || '').trim().toUpperCase();
   const knockoutRound = String(body.knockoutRound || '').trim();
+  const roundName = String(body.roundName || '').trim().slice(0, 20);
   const date = String(body.date || '');
   const time = String(body.time || '');
   const venue = String(body.venue || '').trim();
@@ -169,18 +176,18 @@ function validateSchedule(body, partial = false) {
     if (!teamAId || !teamBId) throw badRequest('请选择对阵双方球队');
     if (teamAId === teamBId) throw badRequest('主队与客队不能相同');
     // 只有阶段、轮次、主客队必填；日期/时间/场地/裁判等均为选填
-    if (stage === 'group' && !/^[A-F]$/.test(groupName)) {
+    // 小组分组仅对「小组赛+淘汰赛」赛制必填；纯联赛没有分组
+    if (stage === 'group' && format === 'group_knockout' && !/^[A-F]$/.test(groupName)) {
       throw badRequest('小组赛请选择小组（A-F）');
     }
-    if (stage === 'knockout'
-      && !['1/8决赛', '1/4决赛', '半决赛', '决赛'].includes(knockoutRound)) {
-      throw badRequest('淘汰赛请选择 1/8决赛 / 1/4决赛 / 半决赛 / 决赛');
+    if (stage === 'knockout' && !knockoutRound) {
+      throw badRequest(`请选择或填写淘汰赛轮次（${KNOCKOUT_ROUNDS.join(' / ')}，也可自定义）`);
     }
   }
   return {
     teamAId, teamBId, date, time, venue, referee,
     assistant1, assistant2, fourthOfficial, specialNote,
-    stage, groupName, knockoutRound,
+    stage, groupName, knockoutRound, roundName,
   };
 }
 
@@ -214,7 +221,7 @@ export function registerMatchRoutes(router) {
       requireAction(user, 'match.manage');
       await assertEventScope(db, user, 'match.manage', event.id);
     }
-    const s = validateSchedule(body);
+    const s = validateSchedule(body, false, event.format);
     for (const rid of [s.teamAId, s.teamBId]) {
       const reg = await db.get(
         `SELECT 1 FROM registrations WHERE id = ? AND event_id = ? AND status = 'approved'`,
@@ -225,14 +232,14 @@ export function registerMatchRoutes(router) {
     const id = uid('mt_');
     await db.run(
       `INSERT INTO matches
-        (id, event_id, team_a_id, team_b_id, stage, group_name, knockout_round,
+        (id, event_id, team_a_id, team_b_id, stage, group_name, knockout_round, round_name,
          match_date, start_time, venue, referee,
          assistant1, assistant2, fourth_official, special_note,
          lineup_a, lineup_b,
          status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'scheduled', ?, ?)`,
       [id, event.id, s.teamAId, s.teamBId, s.stage, s.groupName, s.knockoutRound,
-        s.date, s.time, s.venue, s.referee,
+        s.roundName, s.date, s.time, s.venue, s.referee,
         s.assistant1, s.assistant2, s.fourthOfficial, s.specialNote,
         JSON.stringify(cleanLineup(body.lineupA)),
         JSON.stringify(cleanLineup(body.lineupB)),
@@ -277,11 +284,12 @@ export function registerMatchRoutes(router) {
       next.group_name = g;
     }
     if (body.knockoutRound !== undefined && match.stage === 'knockout') {
-      const r = String(body.knockoutRound).trim();
-      if (!['1/8决赛', '1/4决赛', '半决赛', '决赛'].includes(r)) {
-        throw badRequest('淘汰赛轮次不合法');
-      }
+      const r = String(body.knockoutRound).trim().slice(0, 20);
+      if (!r) throw badRequest('请填写淘汰赛轮次');
       next.knockout_round = r;
+    }
+    if (body.roundName !== undefined) {
+      next.round_name = String(body.roundName).trim().slice(0, 20);
     }
     if (body.lineupA !== undefined) next.lineup_a = JSON.stringify(cleanLineup(body.lineupA));
     if (body.lineupB !== undefined) next.lineup_b = JSON.stringify(cleanLineup(body.lineupB));

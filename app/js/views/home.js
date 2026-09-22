@@ -107,6 +107,12 @@ async function addEventModal(page, events) {
     body: el('div', {},
       field('赛事名称', { id: 'evt-name', required: true, placeholder: '如：2026年北理工校园足球联赛' }),
       field('赛季年份', { id: 'evt-season', required: true, inputmode: 'numeric', maxlength: 4, placeholder: '如：2026' }),
+      el('label', { class: 'field' },
+        el('span', { class: 'required' }, '赛制'),
+        el('select', { id: 'evt-format' },
+          el('option', { value: 'group_knockout', selected: true }, '小组赛 + 淘汰赛'),
+          el('option', { value: 'league' }, '单循环联赛'),
+          el('option', { value: 'knockout' }, '纯淘汰赛'))),
       field('赛事描述（选填）', { id: 'evt-desc', tag: 'textarea', placeholder: '赛制、参赛范围等说明' }),
     ),
   });
@@ -114,10 +120,11 @@ async function addEventModal(page, events) {
     const name = modal.body.querySelector('#evt-name').value.trim();
     const season = modal.body.querySelector('#evt-season').value.trim();
     const description = modal.body.querySelector('#evt-desc').value.trim();
+    const format = modal.body.querySelector('#evt-format').value;
     try {
       const created = await api('/events', {
         method: 'POST',
-        body: { name, season, description },
+        body: { name, season, description, format },
       });
       modal.close();
       toast('赛事创建成功', 'success');

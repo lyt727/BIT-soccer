@@ -31,6 +31,8 @@ class SqliteStore {
       this.backfillPasswords();
     }
     this.addColumnIfMissing('events', 'yellow_suspension_threshold', 'INTEGER NOT NULL DEFAULT 2');
+    this.addColumnIfMissing('events', 'format', "TEXT NOT NULL DEFAULT 'group_knockout'");
+    this.addColumnIfMissing('matches', 'round_name', "TEXT NOT NULL DEFAULT ''");
     this.addColumnIfMissing('player_suspensions', 'matches_suspended', 'INTEGER NOT NULL DEFAULT 1');
     this.relaxSuspensionReasonCheck();
   }

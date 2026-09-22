@@ -66,13 +66,16 @@ export async function renderEvent(container, params) {
           : session.user?.role === 'player' ? '参赛球员' : '只读用户')));
   page.append(header);
 
-  const tabsDef = [
-    ['registrations', '球队报名'],
-    ['groups', '抽签分组'],
+  // 赛制决定标签栏：league 单循环联赛 / group_knockout 小组赛+淘汰赛 / knockout 纯淘汰赛
+  const format = event.format || 'group_knockout';
+  const tabsDef = [['registrations', '球队报名']];
+  if (format === 'league') tabsDef.push(['groups', '抽签编排']);
+  else if (format === 'group_knockout') tabsDef.push(['groups', '抽签分组']);
+  tabsDef.push(
     ['schedule', '赛程安排'],
     ['stats', '数据统计'],
     ['staffstats', '人员统计'],
-  ];
+  );
   if ((session.user?.role === 'admin' || event.staffRole)) {
     tabsDef.push(['staff', '工作人员']);
   }
@@ -109,6 +112,15 @@ function openEventEdit(event) {
       el('label', { class: 'field' },
         el('span', {}, '赛事介绍'),
         el('textarea', { id: 'evt-desc', rows: 3 }, event.description || '')),
+      el('label', { class: 'field' },
+        el('span', {}, '赛制（已有赛程时不可修改）'),
+        el('select', { id: 'evt-format' },
+          el('option', {
+            value: 'group_knockout',
+            selected: (event.format || 'group_knockout') === 'group_knockout',
+          }, '小组赛 + 淘汰赛'),
+          el('option', { value: 'league', selected: event.format === 'league' }, '单循环联赛'),
+          el('option', { value: 'knockout', selected: event.format === 'knockout' }, '纯淘汰赛'))),
     ),
   });
   const submit = async () => {
@@ -118,6 +130,7 @@ function openEventEdit(event) {
         body: {
           name: modal.body.querySelector('#evt-name').value.trim(),
           description: modal.body.querySelector('#evt-desc').value.trim(),
+          format: modal.body.querySelector('#evt-format').value,
         },
       });
       modal.close();

@@ -3,6 +3,7 @@ import { authUser, audit, clientIp, loadEvent } from '../helpers.js';
 import { getDb } from '../db.js';
 import { requireAction, assertEventScope } from '../rbac.js';
 import { nowIso } from '../config.js';
+import { uid } from '../config.js';
 import { readJson, sendJson } from '../http.js';
 import { badRequest, notFound } from '../errors.js';
 
@@ -13,6 +14,25 @@ function shuffle(list) {
     [arr[i], arr[j]] = [arr[j], arr[i]];
   }
   return arr;
+}
+
+// 单循环轮转法（Berger 表）：n 支球队生成 n-1 轮（奇数补一支轮空）
+function roundRobin(teams) {
+  const arr = [...teams];
+  if (arr.length % 2 === 1) arr.push(null); // 轮空
+  const n = arr.length;
+  const rounds = [];
+  for (let r = 0; r < n - 1; r += 1) {
+    const pairs = [];
+    for (let i = 0; i < n / 2; i += 1) {
+      const a = arr[i];
+      const b = arr[n - 1 - i];
+      if (a && b) pairs.push([a, b]);
+    }
+    rounds.push(pairs);
+    arr.splice(1, 0, arr.pop()); // 固定第一支，其余轮转
+  }
+  return rounds;
 }
 
 export async function getGroups(db, eventId) {
@@ -61,6 +81,53 @@ export function registerGroupRoutes(router) {
       throw badRequest('已通过球队不足 2 支，暂不能抽签');
     }
     const body = await readJson(req);
+
+    // 纯淘汰赛没有抽签
+    if (event.format === 'knockout') {
+      throw badRequest('当前赛事为纯淘汰赛赛制，对阵在赛程安排里手动添加');
+    }
+
+    // 单循环联赛：抽签生成全部对阵并分配到各轮
+    if (event.format === 'league') {
+      const total = await db.get(
+        'SELECT COUNT(*) AS n FROM matches WHERE event_id = ?', [event.id],
+      );
+      if (total.n > 0) {
+        if (!body.replace) {
+          throw badRequest('该赛事已有赛程，如需重新抽签请先删除现有比赛');
+        }
+        const finished = await db.get(
+          "SELECT COUNT(*) AS n FROM matches WHERE event_id = ? AND status = 'finished'",
+          [event.id],
+        );
+        if (finished.n > 0) throw badRequest('已有比赛录入结果，不能重新抽签');
+        await db.run('DELETE FROM matches WHERE event_id = ?', [event.id]);
+      }
+      const teams = shuffle(approved);
+      const rounds = roundRobin(teams);
+      let created = 0;
+      for (let r = 0; r < rounds.length; r += 1) {
+        for (const [a, b] of rounds[r]) {
+          await db.run(
+            `INSERT INTO matches
+              (id, event_id, team_a_id, team_b_id, stage, group_name, knockout_round, round_name,
+               match_date, start_time, venue, status, created_by, created_at)
+             VALUES (?, ?, ?, ?, 'group', '', '', ?, '', '', '', 'scheduled', ?, ?)`,
+            [uid('mt_'), event.id, a.id, b.id, `第${r + 1}轮`, user.id, nowIso()],
+          );
+          created += 1;
+        }
+      }
+      await audit(db, user, 'league.draw', 'event', event.id,
+        { teams: teams.length, rounds: rounds.length, matches: created }, clientIp(req));
+      sendJson(res, 200, {
+        message: `单循环抽签完成：${teams.length} 支球队，${rounds.length} 轮共 ${created} 场`,
+        rounds: rounds.length,
+        matchCount: created,
+      });
+      return;
+    }
+
     const groupCount = Number(body.groupCount);
     if (![2, 3, 4, 6].includes(groupCount)) {
       throw badRequest('小组数量可选 2 / 3 / 4 / 6');

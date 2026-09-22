@@ -52,6 +52,15 @@ async function eventView(db, event, user) {
   };
 }
 
+// 赛制：league 单循环联赛 / group_knockout 小组赛+淘汰赛 / knockout 纯淘汰赛
+const EVENT_FORMATS = ['league', 'group_knockout', 'knockout'];
+function normalizeFormat(value) {
+  const f = String(value || '').trim();
+  if (!f) return 'group_knockout';
+  if (!EVENT_FORMATS.includes(f)) throw badRequest('赛制不合法');
+  return f;
+}
+
 export function registerEventRoutes(router) {
   router.add('GET', '/api/events', async (req, res) => {
     const user = await authUser(req);
@@ -69,15 +78,16 @@ export function registerEventRoutes(router) {
     const name = String(body.name || '').trim();
     const season = String(body.season || '').trim();
     const description = String(body.description || '').trim();
+    const format = normalizeFormat(body.format);
     if (!name) throw badRequest('请填写赛事名称');
     if (!/^\d{4}$/.test(season)) throw badRequest('赛季年份需为 4 位数字，如 2026');
     const db = getDb();
     const id = uid('evt_');
     const now = nowIso();
     await db.run(
-      `INSERT INTO events (id, name, season, description, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, 'pending', ?, ?)`,
-      [id, name, season, description, user.id, now],
+      `INSERT INTO events (id, name, season, description, format, status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [id, name, season, description, format, user.id, now],
     );
     if (user.role === 'admin') {
       await db.run(
@@ -86,7 +96,7 @@ export function registerEventRoutes(router) {
         [id, user.id, user.id, now],
       );
     }
-    await audit(db, user, 'event.create', 'event', id, { name, season }, clientIp(req));
+    await audit(db, user, 'event.create', 'event', id, { name, season, format }, clientIp(req));
     const created = await db.get('SELECT * FROM events WHERE id = ?', [id]);
     sendJson(res, 201, await eventView(db, created, user));
   });
@@ -124,6 +134,12 @@ export function registerEventRoutes(router) {
     const season = String(body.season || '').trim() || event.season;
     const description = body.description !== undefined
       ? String(body.description).trim() : event.description;
+    const format = body.format !== undefined ? normalizeFormat(body.format) : event.format;
+    // 已有赛程时不允许改赛制，避免出现小组赛与联赛混排
+    if (format !== (event.format || 'group_knockout')) {
+      const mt = await db.get('SELECT COUNT(*) AS n FROM matches WHERE event_id = ?', [event.id]);
+      if (mt.n > 0) throw badRequest('该赛事已有赛程，不能修改赛制；请先删除全部比赛');
+    }
     if (!/^\d{4}$/.test(season)) throw badRequest('赛季年份需为 4 位数字');
     // 累计多少张黄牌停赛一场：1–10 之间，由管理员设定
     let threshold = Number(event.yellow_suspension_threshold || 2);
@@ -135,12 +151,12 @@ export function registerEventRoutes(router) {
       threshold = n;
     }
     await db.run(
-      `UPDATE events SET name = ?, season = ?, description = ?, yellow_suspension_threshold = ?
-        WHERE id = ?`,
-      [name, season, description, threshold, event.id],
+      `UPDATE events SET name = ?, season = ?, description = ?, format = ?,
+         yellow_suspension_threshold = ? WHERE id = ?`,
+      [name, season, description, format, threshold, event.id],
     );
     await audit(db, user, 'event.update', 'event', event.id,
-      { name, season, yellowThreshold: threshold }, clientIp(req));
+      { name, season, format, yellowThreshold: threshold }, clientIp(req));
     const fresh = await db.get('SELECT * FROM events WHERE id = ?', [event.id]);
     sendJson(res, 200, await eventView(db, fresh, user));
   });

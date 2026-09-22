@@ -41,15 +41,16 @@ export function registerStatsRoutes(router) {
   router.add('GET', '/api/events/:id/standings', async (req, res, params) => {
     await authUser(req);
     const db = getDb();
-    await loadEvent(db, params.id);
-    sendJson(res, 200, computeStandings(db, params.id));
+    const event = await loadEvent(db, params.id);
+    // 纯淘汰赛没有积分榜
+    sendJson(res, 200, event.format === 'knockout' ? [] : computeStandings(db, params.id));
   });
 
   router.add('GET', '/api/events/:id/standings-by-group', async (req, res, params) => {
     await authUser(req);
     const db = getDb();
-    await loadEvent(db, params.id);
-    sendJson(res, 200, computeGroupStandings(db, params.id));
+    const event = await loadEvent(db, params.id);
+    sendJson(res, 200, event.format === 'knockout' ? [] : computeGroupStandings(db, params.id));
   });
 
   router.add('GET', '/api/events/:id/scorers', async (req, res, params) => {
