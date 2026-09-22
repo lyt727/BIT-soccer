@@ -170,7 +170,8 @@ CREATE TABLE IF NOT EXISTS player_suspensions (
   player          TEXT NOT NULL,
   player_no       TEXT,
   reason          TEXT NOT NULL DEFAULT 'red_card'
-                  CHECK (reason IN ('red_card','yellow_accumulation')),
+                  CHECK (reason IN ('red_card','yellow_accumulation','other')),
+  matches_suspended INTEGER NOT NULL DEFAULT 1,
   note            TEXT,
   status          TEXT NOT NULL DEFAULT 'pending'
                   CHECK (status IN ('pending','served','void')),
@@ -180,6 +181,12 @@ CREATE TABLE IF NOT EXISTS player_suspensions (
   updated_at      TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_susp_event ON player_suspensions(event_id);
+
+-- 已上线库的增量迁移（新库执行上面建表语句即可）
+ALTER TABLE player_suspensions ADD COLUMN IF NOT EXISTS matches_suspended INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE player_suspensions DROP CONSTRAINT IF EXISTS player_suspensions_reason_check;
+ALTER TABLE player_suspensions ADD CONSTRAINT player_suspensions_reason_check
+  CHECK (reason IN ('red_card','yellow_accumulation','other'));
 
 CREATE TABLE IF NOT EXISTS audit_log (
   id         TEXT PRIMARY KEY,

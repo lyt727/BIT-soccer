@@ -6,8 +6,17 @@ import { requireAction } from '../rbac.js';
 import { uid, nowIso } from '../config.js';
 import { badRequest, notFound } from '../errors.js';
 
-const REASONS = ['red_card', 'yellow_accumulation'];
+const REASONS = ['red_card', 'yellow_accumulation', 'other'];
 const SUSP_STATUS = ['pending', 'served', 'void'];
+const MAX_SUSP_MATCHES = 10;
+
+function parseMatches(value) {
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < 1 || n > MAX_SUSP_MATCHES) {
+    throw badRequest(`停赛场次需为 1–${MAX_SUSP_MATCHES} 之间的整数`);
+  }
+  return n;
+}
 
 // 该球员当前累计黄牌数 = 总黄牌数 - 已执行停赛写入的清零值
 async function currentYellows(db, eventId, registrationId, player, excludeId = null) {
@@ -146,14 +155,16 @@ export function registerStatsRoutes(router) {
     if (dup) throw badRequest('该球员已有一条“下一轮停赛”记录');
 
     const id = uid('sus_');
+    const matches = body.matches === undefined || body.matches === ''
+      ? 1 : parseMatches(body.matches);
     await db.run(
       `INSERT INTO player_suspensions
          (id, event_id, registration_id, team_name, player, player_no, reason, note,
-          status, cleared_yellow, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
+          matches_suspended, status, cleared_yellow, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', 0, ?, ?)`,
       [id, event.id, registrationId, teamName, player,
         String(body.playerNo || '').trim() || null, reason,
-        String(body.note || '').trim() || null, user.id, nowIso()],
+        String(body.note || '').trim() || null, matches, user.id, nowIso()],
     );
     await audit(db, user, 'suspension.create', 'player_suspension', id,
       { player, teamName, reason }, clientIp(req));
@@ -169,8 +180,14 @@ export function registerStatsRoutes(router) {
     const body = await readJson(req);
     const reason = String(body.reason || 'red_card');
     if (!REASONS.includes(reason)) throw badRequest('停赛类型不合法');
-    const status = String(body.status ?? '');
-    if (status !== '' && !SUSP_STATUS.includes(status)) throw badRequest('停赛状态不合法');
+    const hasStatus = body.status !== undefined && body.status !== null;
+    const status = hasStatus ? String(body.status) : '';
+    if (hasStatus && status !== '' && !SUSP_STATUS.includes(status)) {
+      throw badRequest('停赛状态不合法');
+    }
+    const hasMatches = body.matches !== undefined && body.matches !== null
+      && body.matches !== '';
+    const matches = hasMatches ? parseMatches(body.matches) : null;
     const player = String(body.player || '').trim();
     if (!player) throw badRequest('请选择球员');
     const registrationId = String(body.registrationId || '').trim();
@@ -188,7 +205,7 @@ export function registerStatsRoutes(router) {
       [event.id, registrationId, player, reason],
     );
     // 状态置空 = 清除这条停赛（黄牌榜的“不填”）
-    if (status === '') {
+    if (hasStatus && status === '') {
       if (existing) {
         await db.run('DELETE FROM player_suspensions WHERE id = ?', [existing.id]);
         await audit(db, user, 'suspension.clear', 'player_suspension', existing.id,
@@ -197,32 +214,39 @@ export function registerStatsRoutes(router) {
       sendJson(res, 200, { message: '已清除停赛状态', status: '', clearedYellow: 0 });
       return;
     }
+    const finalStatus = hasStatus ? status : (existing?.status || 'pending');
+    const finalMatches = matches ?? Number(existing?.matches_suspended || 1);
     let cleared = 0;
-    if (status === 'served') {
+    if (finalStatus === 'served') {
       cleared = await currentYellows(db, event.id, registrationId, player, existing?.id || null);
     }
     if (existing) {
       await db.run(
-        `UPDATE player_suspensions SET status = ?, cleared_yellow = ?, player_no = COALESCE(?, player_no),
-           updated_at = ? WHERE id = ?`,
-        [status, cleared, String(body.playerNo || '').trim() || null, nowIso(), existing.id],
+        `UPDATE player_suspensions SET status = ?, cleared_yellow = ?, matches_suspended = ?,
+           player_no = COALESCE(?, player_no), updated_at = ? WHERE id = ?`,
+        [finalStatus, cleared, finalMatches,
+          String(body.playerNo || '').trim() || null, nowIso(), existing.id],
       );
     } else {
       await db.run(
         `INSERT INTO player_suspensions
            (id, event_id, registration_id, team_name, player, player_no, reason, note,
-            status, cleared_yellow, created_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            matches_suspended, status, cleared_yellow, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [uid('sus_'), event.id, registrationId, reg.team_name, player,
           String(body.playerNo || '').trim() || null, reason,
-          String(body.note || '').trim() || null, status, cleared, user.id, nowIso()],
+          String(body.note || '').trim() || null, finalMatches, finalStatus, cleared,
+          user.id, nowIso()],
       );
     }
     await audit(db, user, 'suspension.set_status', 'player_suspension',
-      existing?.id || `${registrationId}:${player}`, { player, reason, status }, clientIp(req));
+      existing?.id || `${registrationId}:${player}`,
+      { player, reason, status: finalStatus, matches: finalMatches }, clientIp(req));
     sendJson(res, 200, {
-      message: status === 'served' ? '已标记为已执行停赛' : '已标记为下一轮停赛',
-      status,
+      message: finalStatus === 'served' ? '已标记为已执行停赛'
+        : (hasStatus ? '已标记为下一轮停赛' : '已保存停赛场次'),
+      status: finalStatus,
+      matches: finalMatches,
       clearedYellow: cleared,
     });
   });
@@ -249,6 +273,10 @@ export function registerStatsRoutes(router) {
     if (body.playerNo !== undefined) {
       updates.push('player_no = ?');
       args.push(String(body.playerNo || '').trim() || null);
+    }
+    if (body.matches !== undefined && body.matches !== null && body.matches !== '') {
+      updates.push('matches_suspended = ?');
+      args.push(parseMatches(body.matches));
     }
 
     let cleared = Number(row.cleared_yellow || 0);

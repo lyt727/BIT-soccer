@@ -381,6 +381,51 @@ check('榜单按 球队 → 球员 → 号码 排序',
     return JSON.stringify(list) === JSON.stringify(sorted);
   })());
 
+// 停赛场次（管理员手动选数字）
+check('红牌榜行数据含停赛场次',
+  cardStats.data.reds.every((r) => Number.isInteger(r.matches) && r.matches >= 1),
+  `场次：${[...new Set(cardStats.data.reds.map((r) => r.matches))].sort().join('/')}`);
+check('停赛名单含停赛场次',
+  cardStats.data.suspensions.every((s) => Number.isInteger(s.matches) && s.matches >= 1));
+// 用最新一次读取的榜单，避免用到前面测试改过的旧状态
+const freshReds = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken })).data.reds;
+const mRow = freshReds.find((r) => r.status === 'served') || freshReds[0];
+const mSet = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: mRow.registrationId, player: mRow.player,
+    playerNo: mRow.playerNo, reason: 'red_card', matches: 3,
+  },
+});
+check('管理员可调整停赛场次', mSet.status === 200 && mSet.data?.matches === 3);
+const mAfter = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.reds.find((r) => r.player === mRow.player);
+check('调整场次后状态保持不变',
+  mAfter?.matches === 3 && mAfter?.status === mRow.status,
+  `场次=${mAfter?.matches} 状态=${mAfter?.statusLabel}`);
+const mBad = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: mRow.registrationId, player: mRow.player,
+    reason: 'red_card', matches: 99,
+  },
+});
+check('停赛场次非法值被拒绝(400)', mBad.status === 400, mBad.data?.error);
+
+// 停赛类型「其他原因」+ 备注非必填
+const otherSusp = await call('POST', '/api/events/evt_demo1/suspensions', {
+  token: adminToken,
+  body: { registrationId: 'reg_e1_1', player: '王建国', reason: 'other', matches: 2 },
+});
+check('可登记「其他原因」停赛且备注非必填',
+  otherSusp.status === 201, otherSusp.data?.error || '');
+const otherRow = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.suspensions.find((s) => s.id === otherSusp.data?.id);
+check('其他原因停赛按场次与类型展示',
+  otherRow?.reason === 'other' && otherRow?.reasonLabel === '其他原因'
+  && otherRow?.matches === 2 && otherRow?.note === '');
+await call('DELETE', `/api/suspensions/${otherSusp.data?.id}`, { token: adminToken });
+
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,
   body: {

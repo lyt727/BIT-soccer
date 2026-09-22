@@ -121,7 +121,7 @@ export function parseJsonArray(text, fallback = []) {
 //   总黄牌数：整届赛事累加，永不重置
 //   累计黄牌数：总黄牌数 - 该球员所有“已完成停赛”记录的清零值
 //   状态：全部由管理员在停赛台账里人工维护，系统不做任何规则判断
-const REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌' };
+const REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌', other: '其他原因' };
 const STATUS_LABEL = { pending: '下一轮停赛', served: '已执行停赛', void: '已失效' };
 
 export function computeCardStats(db, eventId, yellowThreshold = 2) {
@@ -162,6 +162,13 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
   };
   const hasReasonRecord = (key, reason) =>
     (suspMap.get(key) || []).some((s) => s.reason === reason);
+  // 取该球员某类停赛的场次（优先待执行，其次已执行）
+  const matchesOf = (key, reason) => {
+    const mine = (suspMap.get(key) || []).filter((s) => s.reason === reason);
+    const active = mine.find((s) => s.status === 'pending')
+      || mine.find((s) => s.status === 'served') || mine[0];
+    return active ? Number(active.matches_suspended || 1) : 1;
+  };
   const clearedYellows = (key) => (suspMap.get(key) || [])
     .filter((s) => s.status === 'served')
     .reduce((n, s) => n + Number(s.cleared_yellow || 0), 0);
@@ -198,6 +205,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       currentYellows: Math.max(0, item.totalYellows - clearedYellows(key)),
       redStatus,
       redStatusLabel: STATUS_LABEL[redStatus] || '',
+      redMatches: matchesOf(key, 'red_card'),
       yellowStatus,
       yellowStatusLabel: STATUS_LABEL[yellowStatus] || '',
     };
@@ -218,6 +226,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       registrationId: r.registrationId,
       teamName: r.teamName,
       redCards: r.redCards,
+      matches: r.redMatches,
       status: r.redStatus,
       statusLabel: r.redStatusLabel,
     }));
@@ -252,6 +261,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       status: s.status,
       statusLabel: STATUS_LABEL[s.status] || s.status,
       clearedYellow: Number(s.cleared_yellow || 0),
+      matches: Number(s.matches_suspended || 1),
       createdAt: s.created_at,
       updatedAt: s.updated_at,
     })),

@@ -167,7 +167,8 @@ CREATE TABLE IF NOT EXISTS player_suspensions (
   player TEXT NOT NULL,
   player_no TEXT,
   reason TEXT NOT NULL DEFAULT 'red_card'
-         CHECK (reason IN ('red_card','yellow_accumulation')),
+         CHECK (reason IN ('red_card','yellow_accumulation','other')),
+  matches_suspended INTEGER NOT NULL DEFAULT 1,
   note TEXT,
   status TEXT NOT NULL DEFAULT 'pending'
          CHECK (status IN ('pending','served','void')),

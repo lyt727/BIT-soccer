@@ -293,28 +293,28 @@ export function seedIfEmpty(db) {
     const insertSusp = db.prepare(
       `INSERT INTO player_suspensions
          (id, event_id, registration_id, team_name, player, player_no, reason, note,
-          status, cleared_yellow, created_by, created_at)
-       VALUES (?, 'evt_demo1', ?, ?, ?, ?, ?, ?, ?, ?, 'usr_admin', ?)`);
+          matches_suspended, status, cleared_yellow, created_by, created_at)
+       VALUES (?, 'evt_demo1', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'usr_admin', ?)`);
     const pending = demoCards[0];
     insertSusp.run('sus_demo_pending', pending.regId, rosterByReg[pending.regId].teamName,
       pending.red.name, pending.red.jerseyNo, 'red_card',
-      '红牌罚下，下一轮停赛（演示数据）', 'pending', 0, now);
+      '严重犯规红牌，停赛两场（演示数据）', 2, 'pending', 0, now);
     const served = demoCards[1];
     insertSusp.run('sus_demo_served', served.regId, rosterByReg[served.regId].teamName,
       served.yellow.name, served.yellow.jerseyNo, 'yellow_accumulation',
-      '累计黄牌停赛一轮，已执行（演示数据）', 'served', 1, now);
+      '累计黄牌停赛一轮，已执行（演示数据）', 1, 'served', 1, now);
     // 累计 2 张黄牌的球员：登记为下一轮停赛
     const acc = multiCardPlayers[0];
     if (acc) {
       insertSusp.run('sus_demo_yellow_acc', acc.regId, rosterByReg[acc.regId].teamName,
         acc.player.name, acc.player.jerseyNo, 'yellow_accumulation',
-        '累计 2 张黄牌，下一轮停赛（演示数据）', 'pending', 0, now);
+        '累计 2 张黄牌，下一轮停赛（演示数据）', 1, 'pending', 0, now);
     }
     // 一名红牌球员标为「已执行停赛」，用于演示两种状态
     const doneRed = demoCards[1];
     insertSusp.run('sus_demo_red_served', doneRed.regId, rosterByReg[doneRed.regId].teamName,
       doneRed.red.name, doneRed.red.jerseyNo, 'red_card',
-      '红牌停赛一轮已执行（演示数据）', 'served', 0, now);
+      '红牌停赛一轮已执行（演示数据）', 1, 'served', 0, now);
     // 其余红牌球员各补一条「下一轮停赛」，保证红牌榜状态不空
     const redRows = db.all(
       `SELECT DISTINCT c.team, c.player, c.player_no
@@ -336,7 +336,7 @@ export function seedIfEmpty(db) {
       redSeq += 1;
       insertSusp.run(`sus_red_${redSeq}`, reg.id, reg.team_name, row.player,
         row.player_no || null, 'red_card',
-        '红牌自动登记，下一轮停赛（演示数据）', 'pending', 0, now);
+        '红牌自动登记，下一轮停赛（演示数据）', 1, 'pending', 0, now);
     }
   }
 

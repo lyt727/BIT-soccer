@@ -31,6 +31,46 @@ class SqliteStore {
       this.backfillPasswords();
     }
     this.addColumnIfMissing('events', 'yellow_suspension_threshold', 'INTEGER NOT NULL DEFAULT 2');
+    this.addColumnIfMissing('player_suspensions', 'matches_suspended', 'INTEGER NOT NULL DEFAULT 1');
+    this.relaxSuspensionReasonCheck();
+  }
+
+  // 早期版本的 reason 只允许 red_card / yellow_accumulation；SQLite 改不了 CHECK，只能重建表
+  relaxSuspensionReasonCheck() {
+    const row = this.db.prepare(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'player_suspensions'",
+    ).get();
+    if (!row || String(row.sql || '').includes("'other'")) return;
+    this.db.exec(`
+      ALTER TABLE player_suspensions RENAME TO player_suspensions_legacy;
+      CREATE TABLE player_suspensions (
+        id TEXT PRIMARY KEY,
+        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+        registration_id TEXT REFERENCES registrations(id) ON DELETE CASCADE,
+        team_name TEXT NOT NULL,
+        player TEXT NOT NULL,
+        player_no TEXT,
+        reason TEXT NOT NULL DEFAULT 'red_card'
+               CHECK (reason IN ('red_card','yellow_accumulation','other')),
+        matches_suspended INTEGER NOT NULL DEFAULT 1,
+        note TEXT,
+        status TEXT NOT NULL DEFAULT 'pending'
+               CHECK (status IN ('pending','served','void')),
+        cleared_yellow INTEGER NOT NULL DEFAULT 0,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+      );
+      INSERT INTO player_suspensions
+        (id, event_id, registration_id, team_name, player, player_no, reason,
+         matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at)
+      SELECT id, event_id, registration_id, team_name, player, player_no, reason,
+             matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at
+        FROM player_suspensions_legacy;
+      DROP TABLE player_suspensions_legacy;
+      CREATE INDEX IF NOT EXISTS idx_susp_event ON player_suspensions(event_id);
+    `);
+    console.log('[migrate] player_suspensions 已重建，支持“其他原因”停赛');
   }
 
   // 历史账号（手机号+验证码时代创建）没有密码，给一个初始密码，避免升级后无法登录

@@ -69,9 +69,9 @@ export async function renderLeaderboards(container, event) {
 
     container.append(sectionWithExport(
       '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
-      ['球队', '球员', '号码', '红牌数', '状态'],
+      ['球队', '球员', '号码', '红牌数', '停赛场次', '状态'],
       cards.reds.map((r) => [r.teamName, r.player, r.playerNo || '',
-        r.redCards, r.statusLabel || '']),
+        r.redCards, `${r.matches || 1} 场`, r.statusLabel || '']),
     ));
     container.append(redCardsTable(cards.reds, event, reload));
     const canSetThreshold = hasPerm(session.user, 'event.status.update');
@@ -157,6 +157,9 @@ const SUSP_STATUS_TEXT = { pending: '下一轮停赛', served: '已执行停赛'
 // 红牌：二选一；黄牌：-（不设） / 下一轮停赛 / 已执行停赛
 const RED_STATUS_OPTIONS = [['pending', '下一轮停赛'], ['served', '已执行停赛']];
 const YELLOW_STATUS_OPTIONS = [['', '-'], ['pending', '下一轮停赛'], ['served', '已执行停赛']];
+const MAX_SUSP_MATCHES = 10;
+const MATCH_COUNT_OPTIONS = Array.from({ length: MAX_SUSP_MATCHES }, (_, i) => i + 1);
+const SUSP_REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌', other: '其他原因' };
 
 function cardStatusCell(row) {
   if (!row.statusLabel) return el('span', { class: 'small muted' }, '—');
@@ -174,12 +177,15 @@ function redCardsTable(rows, event, reload) {
   const table = el('table', {},
     el('thead', {}, el('tr', {},
       el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
-      el('th', { class: 'num' }, '红牌'), el('th', {}, '状态'))),
+      el('th', { class: 'num' }, '红牌'), el('th', {}, '停赛场次'), el('th', {}, '状态'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
       el('td', {}, r.teamName),
       el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#c62828' } }, r.redCards),
+      el('td', {}, canSet
+        ? matchesSelect(r, event, 'red_card', reload)
+        : el('span', {}, `${r.matches || 1} 场`)),
       el('td', {}, canSet
         ? statusSelect(r, event, 'red_card', RED_STATUS_OPTIONS, reload)
         : cardStatusCell({ status: r.status, statusLabel: r.statusLabel }))))));
@@ -255,6 +261,41 @@ function statusSelect(row, event, reason, options, reload) {
   }, label)));
 }
 
+// 停赛场次下拉列表（1–10 场，管理员手动选）
+function matchesSelect(row, event, reason, reload) {
+  const current = Number(row.matches || 1);
+  return el('select', {
+    style: {
+      padding: '4px 8px', borderRadius: '8px', fontSize: '13px',
+      border: '1px solid #d8dcda', background: '#fff', minWidth: '78px',
+    },
+    onchange: async (e) => {
+      const value = Number(e.currentTarget.value);
+      if (value === current) return;
+      try {
+        await api(`/events/${event.id}/suspensions/status`, {
+          method: 'POST',
+          body: {
+            registrationId: row.registrationId,
+            player: row.player,
+            playerNo: row.playerNo,
+            reason,
+            matches: value,
+          },
+        });
+        toast(`停赛场次已设为 ${value} 场`, 'success');
+        reload();
+      } catch (err) {
+        toast(err.message, 'error');
+        reload();
+      }
+    },
+  }, MATCH_COUNT_OPTIONS.map((n) => el('option', {
+    value: String(n),
+    selected: current === n,
+  }, `${n} 场`)));
+}
+
 function suspensionPanel(event, suspensions, reload) {
   const box = el('div', {});
   box.append(el('div', { class: 'row between wrap', style: { margin: '20px 2px 10px' } },
@@ -286,8 +327,11 @@ function suspensionPanel(event, suspensions, reload) {
             `${s.teamName} · ${s.player}${s.playerNo ? ` · ${s.playerNo} 号` : ''}`),
           cardStatusCell(s)),
         el('div', { class: 'desc' },
-          `${s.reasonLabel}${s.clearedYellow ? ` · 已清零累计黄牌 ${s.clearedYellow} 张` : ''}${s.note ? ` · ${s.note}` : ''}`)),
+          `${s.reasonLabel} · 停赛 ${s.matches || 1} 场`
+          + `${s.clearedYellow ? ` · 已清零累计黄牌 ${s.clearedYellow} 张` : ''}`
+          + `${s.note ? ` · ${s.note}` : ''}`)),
       el('div', { class: 'row wrap' },
+        matchesSelect(s, event, s.reason, reload),
         s.status !== 'served' ? btn('已执行停赛', {
           cls: 'sm', type: 'outline',
           onClick: () => patch(s, 'served',
@@ -363,7 +407,13 @@ async function openSuspensionForm(event, onDone) {
   const playerSel = el('select', { id: 'susp-player' });
   const reasonSel = el('select', { id: 'susp-reason' },
     el('option', { value: 'red_card' }, '红牌'),
-    el('option', { value: 'yellow_accumulation' }, '累计黄牌'));
+    el('option', { value: 'yellow_accumulation' }, '累计黄牌'),
+    el('option', { value: 'other' }, '其他原因'));
+  const matchesSel = el('select', { id: 'susp-matches' },
+    MATCH_COUNT_OPTIONS.map((n) => el('option', {
+      value: String(n),
+      selected: n === 1,
+    }, `${n} 场`)));
   const noteInput = el('input', { id: 'susp-note', placeholder: '备注（可选）' });
 
   const fillPlayers = () => {
@@ -388,7 +438,8 @@ async function openSuspensionForm(event, onDone) {
       field('球队', teamSel),
       field('球员', playerSel),
       field('停赛类型', reasonSel),
-      field('备注', noteInput)),
+      field('停赛场次', matchesSel),
+      field('备注（选填）', noteInput, false)),
   });
   const submit = async () => {
     const opt = playerSel.selectedOptions[0];
@@ -401,6 +452,7 @@ async function openSuspensionForm(event, onDone) {
           player: playerSel.value,
           playerNo: opt?.dataset?.no || '',
           reason: reasonSel.value,
+          matches: Number(matchesSel.value),
           note: noteInput.value.trim(),
         },
       });
@@ -695,9 +747,9 @@ function clamp(v) {
   return Number.isInteger(n) ? n : 0;
 }
 
-function field(labelText, input) {
+function field(labelText, input, required = true) {
   return el('label', { class: 'field' },
-    el('span', { class: 'required' }, labelText), input);
+    el('span', { class: required ? 'required' : '' }, labelText), input);
 }
 
 function addSubRow(box, init = {}) {
