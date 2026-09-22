@@ -69,8 +69,9 @@ export function registerGroupRoutes(router) {
     const db = getDb();
     const event = await loadEvent(db, params.id);
     await assertEventScope(db, user, 'draw.groups', event.id);
-    if (!['signup', 'live'].includes(event.status)) {
-      throw badRequest('当前赛事状态不允许抽签（需为报名中或进行中）');
+    // 报名结束后（状态为「进行中」）才能抽签；与添加比赛互不依赖、无先后要求
+    if (event.status !== 'live') {
+      throw badRequest('报名结束后（赛事状态为「进行中」）才能抽签编排');
     }
     const approved = await db.all(
       `SELECT id, team_name FROM registrations

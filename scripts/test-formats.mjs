@@ -267,6 +267,10 @@ console.log('\n【五、赛事状态与比赛增改】');
     body: { stage: 'group', groupName: 'A', teamAId: 'reg_e2_1', teamBId: 'reg_e2_2' },
   });
   ok('报名中状态不能手动添加比赛', signupAdd.status === 400, signupAdd.data?.error || '');
+  // 报名中同样不能抽签
+  const signupDraw = await call('POST', '/api/events/evt_demo2/draw',
+    { token: adminToken, body: { groupCount: 2 } });
+  ok('报名中状态不能抽签', signupDraw.status === 400, signupDraw.data?.error || '');
 
   // 进行中：可以编辑单场比赛信息
   const liveMatch = (await call('GET', '/api/events/evt_demo1/matches', { token: adminToken })).data[0];

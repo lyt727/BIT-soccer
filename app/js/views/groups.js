@@ -38,15 +38,16 @@ async function renderGroupDraw(container, event, canManage, approved) {
     '抽签分组',
     el('small', {}, groups.length
       ? `${groups.length} 个小组 · 已覆盖全部已通过球队` : '尚未抽签')));
-  if (canManage && ['signup', 'live'].includes(event.status) && approved >= 2) {
+  if (canManage && event.status === 'live' && approved >= 2) {
     container.append(btn(groups.length ? '⟳ 重新抽签' : '开始抽签', {
       type: 'primary', cls: 'block', onClick: () => drawFlow(event, approved, groups),
     }));
   }
   if (!groups.length) {
     container.append(empty(
-      approved >= 2 ? '确认球队都已审核通过后，点击「开始抽签」自动均衡分组'
-        : '已通过球队不足 2 支，暂不能抽签', '🎲'));
+      event.status !== 'live' ? '报名结束后（赛事状态切到「进行中」）才能抽签分组'
+        : (approved >= 2 ? '确认球队都已审核通过后，点击「开始抽签」自动均衡分组'
+          : '已通过球队不足 2 支，暂不能抽签'), '🎲'));
     return;
   }
   const grid = el('div', { class: 'group-grid mt12' });
@@ -110,16 +111,18 @@ async function renderLeagueDraw(container, event, canManage, approved) {
     el('small', {}, matches.length
       ? `单循环 · ${rounds.size} 轮 · 共 ${matches.length} 场`
       : '尚未编排')));
-  if (canManage && ['signup', 'live'].includes(event.status) && approved >= 2) {
+  if (canManage && event.status === 'live' && approved >= 2) {
     container.append(btn(matches.length ? '⟳ 重新编排' : '开始编排（单循环）', {
       type: 'primary', cls: 'block',
       onClick: () => leagueDrawFlow(event, approved, matches.length > 0),
     }));
   }
   if (!matches.length) {
-    container.append(empty(approved >= 2
-      ? '点击「开始编排」，按单循环自动生成全部对阵并随机分轮'
-      : '已通过球队不足 2 支，暂不能编排', '🎲'));
+    container.append(empty(
+      event.status !== 'live' ? '报名结束后（赛事状态切到「进行中」）才能抽签编排'
+        : (approved >= 2
+          ? '点击「开始编排」，按单循环自动生成全部对阵并随机分轮'
+          : '已通过球队不足 2 支，暂不能编排'), '🎲'));
     return;
   }
   const grid = el('div', { class: 'group-grid mt12' });
