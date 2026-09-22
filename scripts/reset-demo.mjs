@@ -43,5 +43,5 @@ raw.exec(ddl);
 const seeded = seedIfEmpty(db);
 raw.close();
 console.log(seeded
-  ? '演示数据已重置（手机号验证码登录；演示验证码自动显示）'
+  ? '演示数据已重置（手机号 + 密码登录，初始密码见 DEMO_PASSWORD，默认 123456）'
   : '数据库未清空（可能仍有用户数据）');
