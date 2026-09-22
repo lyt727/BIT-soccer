@@ -27,9 +27,11 @@ CREATE TABLE IF NOT EXISTS events (
   description TEXT,
   status      TEXT NOT NULL DEFAULT 'pending'
               CHECK (status IN ('pending','signup','live','ended')),
+  yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2,
   created_by  TEXT NOT NULL REFERENCES users(id),
   created_at  TEXT NOT NULL
 );
+ALTER TABLE events ADD COLUMN IF NOT EXISTS yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2;
 
 CREATE TABLE IF NOT EXISTS event_staff (
   event_id    TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,

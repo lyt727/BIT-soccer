@@ -265,7 +265,30 @@ export function seedIfEmpty(db) {
     });
   }
 
-  // 停赛台账示例：一条红牌停赛（下一轮停赛）+ 一条累计黄牌停赛（已完成停赛，累计黄牌清零）
+  // 多张牌的演示数据：给「已完赛 2 场」的球队各安排一名球员累计 2 张牌
+  const finishedGroupMatches = db.prepare(
+    `SELECT id FROM matches
+      WHERE event_id = 'evt_demo1' AND stage = 'group' AND status = 'finished'
+        AND (team_a_id = ? OR team_b_id = ?)
+      ORDER BY id`);
+  const multiCardPlayers = [];
+  for (const [regId, cardType] of [
+    ['reg_e1_5', 'yellow'],   // 宇航学院一队
+    ['reg_e1_9', 'yellow'],   // 数学与统计学院一队
+    ['reg_e1_13', 'red'],     // 外国语学院一队
+  ]) {
+    const roster = rosterByReg[regId]?.roster || [];
+    const player = roster.find((m) => m.roles.includes('player'));
+    if (!player) continue;
+    const rows = finishedGroupMatches.all(regId, regId);
+    rows.forEach((row, i) => {
+      insertCard.run(`x_${regId}_${i}`, row.id, rosterByReg[regId].teamName,
+        player.name, player.jerseyNo, cardType, `${28 + i * 13}'`);
+    });
+    if (cardType === 'yellow' && rows.length) multiCardPlayers.push({ regId, player });
+  }
+
+  // 停赛名单示例：红牌停赛（下一轮停赛）+ 累计黄牌停赛（下一轮停赛）+ 已执行停赛（累计黄牌清零）
   if (demoCards.length >= 2) {
     const insertSusp = db.prepare(
       `INSERT INTO player_suspensions
@@ -280,6 +303,13 @@ export function seedIfEmpty(db) {
     insertSusp.run('sus_demo_served', served.regId, rosterByReg[served.regId].teamName,
       served.yellow.name, served.yellow.jerseyNo, 'yellow_accumulation',
       '累计黄牌停赛一轮，已执行（演示数据）', 'served', 1, now);
+    // 累计 2 张黄牌的球员：登记为下一轮停赛
+    const acc = multiCardPlayers[0];
+    if (acc) {
+      insertSusp.run('sus_demo_yellow_acc', acc.regId, rosterByReg[acc.regId].teamName,
+        acc.player.name, acc.player.jerseyNo, 'yellow_accumulation',
+        '累计 2 张黄牌，下一轮停赛（演示数据）', 'pending', 0, now);
+    }
   }
 
   // 淘汰赛（单回合、手动对阵）：两场半决赛 + 一场决赛

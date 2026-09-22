@@ -101,8 +101,8 @@ export function registerStatsRoutes(router) {
   router.add('GET', '/api/events/:id/card-stats', async (req, res, params) => {
     await authUser(req);
     const db = getDb();
-    await loadEvent(db, params.id);
-    sendJson(res, 200, computeCardStats(db, params.id));
+    const event = await loadEvent(db, params.id);
+    sendJson(res, 200, computeCardStats(db, params.id, event.yellow_suspension_threshold));
   });
 
   // 登记停赛（仅管理员）

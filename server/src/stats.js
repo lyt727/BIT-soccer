@@ -124,7 +124,7 @@ export function parseJsonArray(text, fallback = []) {
 const REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌' };
 const STATUS_LABEL = { pending: '下一轮停赛', served: '已完成停赛', void: '已失效' };
 
-export function computeCardStats(db, eventId) {
+export function computeCardStats(db, eventId, yellowThreshold = 2) {
   const cards = db.all(
     `SELECT c.player, c.player_no, c.card_type,
             r.id AS reg_id, r.team_name
@@ -222,6 +222,7 @@ export function computeCardStats(db, eventId) {
     }));
 
   return {
+    yellowThreshold: Number(yellowThreshold) || 2,
     reds,
     yellows,
     suspensions: suspensions.map((s) => ({

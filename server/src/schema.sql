@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS events (
   season TEXT NOT NULL,
   description TEXT,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signup','live','ended')),
+  yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2,
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL
 );

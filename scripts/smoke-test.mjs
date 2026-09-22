@@ -296,6 +296,25 @@ check('清零后累计黄牌归零、总黄牌不变',
 const suspDel = await call('DELETE', `/api/suspensions/${suspNew.data?.id}`, { token: adminToken });
 check('删除停赛记录', suspDel.status === 200);
 
+// 累计黄牌门槛（管理员可设定，只影响榜单说明）
+const thrSet = await call('PATCH', '/api/events/evt_demo1',
+  { token: adminToken, body: { yellowThreshold: 3 } });
+const thrRead = await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken });
+check('管理员可设定累计黄牌门槛',
+  thrSet.status === 200 && thrRead.data?.yellowThreshold === 3,
+  `yellowThreshold=${thrRead.data?.yellowThreshold}`);
+const thrBad = await call('PATCH', '/api/events/evt_demo1',
+  { token: adminToken, body: { yellowThreshold: 99 } });
+check('门槛非法值被拒绝(400)', thrBad.status === 400, thrBad.data?.error);
+const thrDenied = await call('PATCH', '/api/events/evt_demo1',
+  { token: opToken, body: { yellowThreshold: 4 } });
+check('数据录入员修改门槛被拒绝(403)', thrDenied.status === 403);
+await call('PATCH', '/api/events/evt_demo1',
+  { token: adminToken, body: { yellowThreshold: 2 } });
+check('多张牌演示数据（至少一人累计 2 张以上）',
+  cardStats.data?.yellows?.some((y) => y.totalYellows >= 2)
+  && cardStats.data?.reds?.some((r) => r.redCards >= 2));
+
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,
   body: {

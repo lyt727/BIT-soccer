@@ -40,6 +40,7 @@ export async function renderStats(container, event) {
 
 export async function renderLeaderboards(container, event) {
   clear(container);
+  const reload = () => renderLeaderboards(container, event);
   try {
     const [groupStandings, scorers, matches, cards] = await Promise.all([
       api(`/events/${event.id}/standings-by-group`),
@@ -68,22 +69,39 @@ export async function renderLeaderboards(container, event) {
     container.append(scorersTable(scorers));
 
     container.append(sectionWithExport(
-      '红牌榜', '红牌停赛一轮，停赛状态由管理员维护', `${event.name}-红牌榜`,
+      '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
       ['排名', '号码', '球员', '球队', '红牌数', '状态'],
       cards.reds.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
         r.redCards, r.statusLabel || '']),
     ));
     container.append(redCardsTable(cards.reds));
+    const canSetThreshold = hasPerm(session.user, 'event.status.update');
+    const threshold = Number(cards.yellowThreshold) || 2;
     container.append(sectionWithExport(
-      '黄牌榜', '累计黄牌在“已完成停赛”后清零，总黄牌持续累加', `${event.name}-黄牌榜`,
+      '黄牌榜',
+      el('span', {},
+        '累计 ',
+        canSetThreshold
+          ? el('button', {
+            type: 'button',
+            style: {
+              background: '#0b7a43', color: '#fff', border: 'none', borderRadius: '10px',
+              padding: '1px 9px', fontSize: '12px', fontWeight: '700', cursor: 'pointer',
+              margin: '0 2px',
+            },
+            onClick: () => openThresholdModal(event, threshold, reload),
+          }, `${threshold} 张`)
+          : el('b', {}, `${threshold} 张`),
+        '黄牌停赛一场',
+        canSetThreshold ? '（点击数字可修改）' : ''),
+      `${event.name}-黄牌榜`,
       ['排名', '号码', '球员', '球队', '总黄牌数', '累计黄牌数', '状态'],
       cards.yellows.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
         r.totalYellows, r.currentYellows, r.statusLabel || '']),
     ));
     container.append(yellowCardsTable(cards.yellows));
     if (hasPerm(session.user, 'suspension.manage')) {
-      container.append(suspensionPanel(event, cards.suspensions,
-        () => renderLeaderboards(container, event)));
+      container.append(suspensionPanel(event, cards.suspensions, reload));
     }
     const knockout = matches
       .filter((m) => m.stage === 'knockout')
@@ -204,14 +222,14 @@ function yellowCardsTable(rows) {
 function suspensionPanel(event, suspensions, reload) {
   const box = el('div', {});
   box.append(el('div', { class: 'row between wrap', style: { margin: '20px 2px 10px' } },
-    el('div', { class: 'section-title', style: { margin: 0 } }, '停赛台账',
+    el('div', { class: 'section-title', style: { margin: 0 } }, '停赛名单',
       el('small', {}, '全部人工维护：登记后为「下一轮停赛」，赛后标记「已完成停赛」即自动清零累计黄牌')),
     btn('＋ 登记停赛', {
       type: 'primary', cls: 'sm',
       onClick: () => openSuspensionForm(event, reload),
     })));
   if (!suspensions.length) {
-    box.append(empty('暂无停赛记录', '🟥'));
+    box.append(empty('暂无停赛球员', '🟥'));
     return box;
   }
   const patch = async (s, status, message) => {
@@ -232,7 +250,7 @@ function suspensionPanel(event, suspensions, reload) {
           el('span', { class: 'small muted' }, s.teamName),
           cardStatusCell(s)),
         el('div', { class: 'desc' },
-          `${s.reasonLabel}${s.note ? ` · ${s.note}` : ''}`)),
+          `${s.reasonLabel}${s.clearedYellow ? ` · 已清零累计黄牌 ${s.clearedYellow} 张` : ''}${s.note ? ` · ${s.note}` : ''}`)),
       el('div', { class: 'row wrap' },
         s.status !== 'served' ? btn('已完成停赛', {
           cls: 'sm', type: 'outline',
@@ -265,6 +283,36 @@ function suspensionPanel(event, suspensions, reload) {
 const MEMBER_ROLE_LABEL = {
   head_coach: '主教练', manager: '领队', captain: '队长', player: '队员',
 };
+
+function openThresholdModal(event, current, onDone) {
+  const input = el('input', {
+    id: 'yellow-threshold', type: 'number', min: '1', max: '10', value: String(current),
+  });
+  const modal = openModal({
+    title: '设置累计黄牌停赛门槛',
+    body: el('div', {},
+      el('p', { class: 'small muted' },
+        '累计多少张黄牌停赛一场？只影响榜单说明文字，具体谁该停赛仍由你手动登记。'),
+      field('累计黄牌张数（1–10）', input)),
+  });
+  const submit = async () => {
+    const n = Number(input.value);
+    if (!Number.isInteger(n) || n < 1 || n > 10) {
+      toast('请输入 1–10 之间的整数', 'error');
+      return;
+    }
+    try {
+      await api(`/events/${event.id}`, { method: 'PATCH', body: { yellowThreshold: n } });
+      modal.close();
+      toast(`已设置为累计 ${n} 张黄牌停赛一场`, 'success');
+      onDone();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  modal.setFoot([
+    btn('取消', { onClick: () => modal.close() }),
+    btn('保存', { type: 'primary', onClick: submit }),
+  ]);
+}
 
 async function openSuspensionForm(event, onDone) {
   let regs = [];

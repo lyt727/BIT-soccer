@@ -125,11 +125,22 @@ export function registerEventRoutes(router) {
     const description = body.description !== undefined
       ? String(body.description).trim() : event.description;
     if (!/^\d{4}$/.test(season)) throw badRequest('赛季年份需为 4 位数字');
+    // 累计多少张黄牌停赛一场：1–10 之间，由管理员设定
+    let threshold = Number(event.yellow_suspension_threshold || 2);
+    if (body.yellowThreshold !== undefined) {
+      const n = Number(body.yellowThreshold);
+      if (!Number.isInteger(n) || n < 1 || n > 10) {
+        throw badRequest('累计黄牌停赛门槛需为 1–10 之间的整数');
+      }
+      threshold = n;
+    }
     await db.run(
-      'UPDATE events SET name = ?, season = ?, description = ? WHERE id = ?',
-      [name, season, description, event.id],
+      `UPDATE events SET name = ?, season = ?, description = ?, yellow_suspension_threshold = ?
+        WHERE id = ?`,
+      [name, season, description, threshold, event.id],
     );
-    await audit(db, user, 'event.update', 'event', event.id, { name, season }, clientIp(req));
+    await audit(db, user, 'event.update', 'event', event.id,
+      { name, season, yellowThreshold: threshold }, clientIp(req));
     const fresh = await db.get('SELECT * FROM events WHERE id = ?', [event.id]);
     sendJson(res, 200, await eventView(db, fresh, user));
   });

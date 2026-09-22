@@ -30,6 +30,7 @@ class SqliteStore {
     if (this.addColumnIfMissing('users', 'password_hash', 'TEXT')) {
       this.backfillPasswords();
     }
+    this.addColumnIfMissing('events', 'yellow_suspension_threshold', 'INTEGER NOT NULL DEFAULT 2');
   }
 
   // 历史账号（手机号+验证码时代创建）没有密码，给一个初始密码，避免升级后无法登录
