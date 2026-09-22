@@ -1,6 +1,7 @@
-# 把 DOMAIN 换成你的域名，例如 soccer.example.com
-# 域名解析到服务器 IP 后，Caddy 会自动申请 HTTPS 证书
-{$DOMAIN} {
+# DOMAIN 通过 .env 注入（例如 bitsoccer.cn）
+# 域名解析到服务器 IP 后，Caddy 会自动申请并续期 HTTPS 证书
+# 同时覆盖 www 子域，避免 https://www.你的域名 打不开
+{$DOMAIN}, www.{$DOMAIN} {
 	encode gzip
 	reverse_proxy web:3000
 }
