@@ -469,7 +469,7 @@ export function registerMatchRoutes(router) {
               status, cleared_yellow, created_by, created_at)
            VALUES (?, ?, ?, ?, ?, ?, 'red_card', ?, 'pending', 0, ?, ?)`,
           [uid('sus_'), match.event_id, reg.id, reg.team_name, cardPlayer,
-            String(c.no ?? '').trim() || null, '红牌自动登记，下一轮停赛', user.id, nowIso()],
+            String(c.no ?? '').trim() || null, null, user.id, nowIso()],
         );
       }
       await db.run(

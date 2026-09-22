@@ -189,6 +189,7 @@ export function registerStatsRoutes(router) {
     const hasMatches = body.matches !== undefined && body.matches !== null
       && body.matches !== '';
     const matches = hasMatches ? parseMatches(body.matches) : null;
+    const hasNote = body.note !== undefined;
     const player = String(body.player || '').trim();
     if (!player) throw badRequest('请选择球员');
     const registrationId = String(body.registrationId || '').trim();
@@ -217,6 +218,7 @@ export function registerStatsRoutes(router) {
     }
     const finalStatus = hasStatus ? status : (existing?.status || 'pending');
     const finalMatches = matches ?? Number(existing?.matches_suspended || 1);
+    const finalNote = hasNote ? (String(body.note || '').trim() || null) : (existing?.note ?? null);
     let cleared = 0;
     if (finalStatus === 'served') {
       cleared = await currentYellows(db, event.id, registrationId, player, existing?.id || null);
@@ -224,8 +226,8 @@ export function registerStatsRoutes(router) {
     if (existing) {
       await db.run(
         `UPDATE player_suspensions SET status = ?, cleared_yellow = ?, matches_suspended = ?,
-           player_no = COALESCE(?, player_no), updated_at = ? WHERE id = ?`,
-        [finalStatus, cleared, finalMatches,
+           note = ?, player_no = COALESCE(?, player_no), updated_at = ? WHERE id = ?`,
+        [finalStatus, cleared, finalMatches, finalNote,
           String(body.playerNo || '').trim() || null, nowIso(), existing.id],
       );
     } else {
@@ -236,7 +238,7 @@ export function registerStatsRoutes(router) {
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [uid('sus_'), event.id, registrationId, reg.team_name, player,
           String(body.playerNo || '').trim() || null, reason,
-          String(body.note || '').trim() || null, finalMatches, finalStatus, cleared,
+          finalNote, finalMatches, finalStatus, cleared,
           user.id, nowIso()],
       );
     }
@@ -245,9 +247,10 @@ export function registerStatsRoutes(router) {
       { player, reason, status: finalStatus, matches: finalMatches }, clientIp(req));
     sendJson(res, 200, {
       message: finalStatus === 'served' ? '已标记为已执行停赛'
-        : (hasStatus ? '已标记为下一轮停赛' : '已保存停赛场次'),
+        : (hasStatus ? '已标记为下一轮停赛' : (hasNote ? '备注已保存' : '已保存停赛场次')),
       status: finalStatus,
       matches: finalMatches,
+      note: finalNote || '',
       clearedYellow: cleared,
     });
   });

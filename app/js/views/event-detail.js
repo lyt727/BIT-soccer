@@ -74,7 +74,7 @@ export async function renderEvent(container, params) {
   tabsDef.push(
     ['schedule', '赛程安排'],
     ['stats', '数据统计'],
-    ['staffstats', '人员统计'],
+    ['staffstats', '工作统计'],
   );
   if ((session.user?.role === 'admin' || event.staffRole)) {
     tabsDef.push(['staff', '工作人员']);

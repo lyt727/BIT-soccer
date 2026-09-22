@@ -82,9 +82,9 @@ export async function renderLeaderboards(container, event) {
 
     container.append(sectionWithExport(
       '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
-      ['球队', '球员', '号码', '红牌数', '停赛场次', '状态'],
+      ['球队', '球员', '号码', '红牌数', '停赛场次', '状态', '备注'],
       cards.reds.map((r) => [r.teamName, r.player, r.playerNo || '',
-        r.redCards, `${r.matches || 1} 场`, r.statusLabel || '']),
+        r.redCards, `${r.matches || 1} 场`, r.statusLabel || '', r.note || '']),
     ));
     container.append(redCardsTable(cards.reds, event, reload));
     const canSetThreshold = hasPerm(session.user, 'event.status.update');
@@ -107,9 +107,9 @@ export async function renderLeaderboards(container, event) {
         '黄牌停赛一场',
         canSetThreshold ? '（点击数字可修改）' : ''),
       `${event.name}-黄牌榜`,
-      ['球队', '球员', '号码', '总黄牌数', '累计黄牌数', '状态'],
+      ['球队', '球员', '号码', '总黄牌数', '累计黄牌数', '状态', '备注'],
       cards.yellows.map((r) => [r.teamName, r.player, r.playerNo || '',
-        r.totalYellows, r.currentYellows, r.statusLabel || '']),
+        r.totalYellows, r.currentYellows, r.statusLabel || '', r.note || '']),
     ));
     container.append(yellowCardsTable(cards.yellows, event, reload, threshold));
     if (hasPerm(session.user, 'suspension.manage')) {
@@ -190,7 +190,8 @@ function redCardsTable(rows, event, reload) {
   const table = el('table', {},
     el('thead', {}, el('tr', {},
       el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
-      el('th', { class: 'num' }, '红牌'), el('th', {}, '停赛场次'), el('th', {}, '状态'))),
+      el('th', { class: 'num' }, '红牌'), el('th', {}, '停赛场次'), el('th', {}, '状态'),
+      el('th', {}, '备注'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
       el('td', {}, r.teamName),
       el('td', { style: { fontWeight: '500' } }, r.player),
@@ -201,7 +202,10 @@ function redCardsTable(rows, event, reload) {
         : el('span', {}, `${r.matches || 1} 场`)),
       el('td', {}, canSet
         ? statusSelect(r, event, 'red_card', RED_STATUS_OPTIONS, reload)
-        : cardStatusCell({ status: r.status, statusLabel: r.statusLabel }))))));
+        : cardStatusCell({ status: r.status, statusLabel: r.statusLabel })),
+      el('td', {}, canSet
+        ? noteInput(r, event, 'red_card', reload)
+        : el('span', { class: 'small' }, r.note || '—'))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
@@ -212,7 +216,7 @@ function yellowCardsTable(rows, event, reload, threshold) {
     el('thead', {}, el('tr', {},
       el('th', {}, '球队'), el('th', {}, '球员'), el('th', {}, '号码'),
       el('th', { class: 'num' }, '总黄牌'), el('th', { class: 'num' }, '累计黄牌'),
-      el('th', {}, '状态'))),
+      el('th', {}, '状态'), el('th', {}, '备注'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
       el('td', {}, r.teamName),
       el('td', { style: { fontWeight: '500' } }, r.player),
@@ -230,7 +234,10 @@ function yellowCardsTable(rows, event, reload, threshold) {
           : null),
       el('td', {}, canSet
         ? statusSelect(r, event, 'yellow_accumulation', YELLOW_STATUS_OPTIONS, reload)
-        : cardStatusCell(r))))));
+        : cardStatusCell(r)),
+      el('td', {}, canSet
+        ? noteInput(r, event, 'yellow_accumulation', reload)
+        : el('span', { class: 'small' }, r.note || '—'))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
@@ -307,6 +314,42 @@ function matchesSelect(row, event, reason, reload) {
     value: String(n),
     selected: current === n,
   }, `${n} 场`)));
+}
+
+// 备注输入框（选填，失焦或回车保存；与停赛名单显示的是同一条记录）
+function noteInput(row, event, reason, reload) {
+  const input = el('input', {
+    type: 'text',
+    value: row.note || '',
+    placeholder: '备注（选填）',
+    style: {
+      minWidth: '150px', padding: '4px 8px', borderRadius: '8px',
+      border: '1px solid #d8dcda', fontSize: '13px',
+    },
+  });
+  const save = async () => {
+    const value = input.value.trim();
+    if (value === (row.note || '')) return;
+    try {
+      await api(`/events/${event.id}/suspensions/status`, {
+        method: 'POST',
+        body: {
+          registrationId: row.registrationId,
+          player: row.player,
+          playerNo: row.playerNo,
+          reason,
+          note: value,
+        },
+      });
+      toast(value ? '备注已保存' : '备注已清空', 'success');
+      reload();
+    } catch (err) { toast(err.message, 'error'); }
+  };
+  input.addEventListener('blur', save);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); input.blur(); }
+  });
+  return input;
 }
 
 function suspensionPanel(event, suspensions, reload) {

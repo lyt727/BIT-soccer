@@ -169,6 +169,13 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       || mine.find((s) => s.status === 'served') || mine[0];
     return active ? Number(active.matches_suspended || 1) : 1;
   };
+  // 备注与停赛名单里显示的是同一条记录，保证两处一致
+  const noteOf = (key, reason) => {
+    const mine = (suspMap.get(key) || []).filter((s) => s.reason === reason);
+    const active = mine.find((s) => s.status === 'pending')
+      || mine.find((s) => s.status === 'served') || mine[0];
+    return active ? (active.note || '') : '';
+  };
   const clearedYellows = (key) => (suspMap.get(key) || [])
     .filter((s) => s.status === 'served')
     .reduce((n, s) => n + Number(s.cleared_yellow || 0), 0);
@@ -206,6 +213,8 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       redStatus,
       redStatusLabel: STATUS_LABEL[redStatus] || '',
       redMatches: matchesOf(key, 'red_card'),
+      redNote: noteOf(key, 'red_card'),
+      yellowNote: noteOf(key, 'yellow_accumulation'),
       yellowStatus,
       yellowStatusLabel: STATUS_LABEL[yellowStatus] || '',
     };
@@ -227,6 +236,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       teamName: r.teamName,
       redCards: r.redCards,
       matches: r.redMatches,
+      note: r.redNote,
       status: r.redStatus,
       statusLabel: r.redStatusLabel,
     }));
@@ -239,6 +249,7 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
       playerNo: r.playerNo,
       registrationId: r.registrationId,
       teamName: r.teamName,
+      note: r.yellowNote,
       totalYellows: r.totalYellows,
       currentYellows: r.currentYellows,
       status: r.yellowStatus,

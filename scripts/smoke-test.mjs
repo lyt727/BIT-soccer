@@ -426,6 +426,43 @@ check('其他原因停赛按场次与类型展示',
   && otherRow?.matches === 2 && otherRow?.note === '');
 await call('DELETE', `/api/suspensions/${otherSusp.data?.id}`, { token: adminToken });
 
+// 备注（与停赛名单同一条记录，选填）
+const noteRow = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.reds.find((r) => r.note);
+check('红牌榜返回备注字段', typeof noteRow?.note === 'string' && noteRow.note.length > 0,
+  `示例：${noteRow?.note}`);
+const noteSet = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: noteRow.registrationId, player: noteRow.player,
+    reason: 'red_card', note: '辱骂裁判，停赛5场',
+  },
+});
+check('管理员可填写备注', noteSet.status === 200 && noteSet.data?.note === '辱骂裁判，停赛5场');
+const afterNote = await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken });
+const boardNote = afterNote.data.reds.find((r) => r.player === noteRow.player);
+const listNote = afterNote.data.suspensions.find((s) => s.player === noteRow.player
+  && s.reason === 'red_card');
+check('红牌榜备注与停赛名单一致',
+  boardNote?.note === '辱骂裁判，停赛5场' && listNote?.note === boardNote?.note);
+check('写备注不改变停赛状态', boardNote?.status === noteRow.status);
+const noteClear = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: noteRow.registrationId, player: noteRow.player,
+    reason: 'red_card', note: '',
+  },
+});
+check('备注可清空', noteClear.status === 200 && noteClear.data?.note === '');
+const afterClear = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.reds.find((r) => r.player === noteRow.player);
+check('清空后备注为空', afterClear?.note === '');
+const suspNoteDenied = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: opToken,
+  body: { registrationId: noteRow.registrationId, player: noteRow.player, reason: 'red_card', note: 'x' },
+});
+check('数据录入员改备注被拒绝(403)', suspNoteDenied.status === 403);
+
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,
   body: {

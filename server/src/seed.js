@@ -335,9 +335,14 @@ export function seedIfEmpty(db) {
       if (exists) continue;
       redSeq += 1;
       insertSusp.run(`sus_red_${redSeq}`, reg.id, reg.team_name, row.player,
-        row.player_no || null, 'red_card',
-        '红牌自动登记，下一轮停赛（演示数据）', 1, 'pending', 0, now);
+        row.player_no || null, 'red_card', null, 1, 'pending', 0, now);
     }
+    // 备注示例：严重违纪除红牌外追加停赛
+    db.run(
+      `UPDATE player_suspensions SET matches_suspended = 5, note = ?
+        WHERE event_id = 'evt_demo1' AND reason = 'red_card' AND player = ?`,
+      ['辱骂裁判，停赛5场', '周平'],
+    );
   }
 
   // 淘汰赛（单回合、手动对阵）：两场半决赛 + 一场决赛
