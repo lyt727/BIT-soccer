@@ -41,6 +41,40 @@ const adminToken = adminLogin.data?.token;
 check('管理员手机号验证码登录', adminLogin.status === 200 && Boolean(adminToken),
   `role=${adminLogin.data?.user?.role}`);
 
+// ---- 账号体系：手机号 + 姓名 + 密码 ----
+const pwdLogin = await call('POST', '/api/auth/login-password',
+  { body: { phone: '13900000001', password: '123456' } });
+check('手机号 + 密码登录', pwdLogin.status === 200 && Boolean(pwdLogin.data?.token));
+check('登录响应不含密码散列', !JSON.stringify(pwdLogin.data || {}).includes('password_hash'));
+const pwdWrong = await call('POST', '/api/auth/login-password',
+  { body: { phone: '13900000001', password: 'definitely-wrong' } });
+check('错误密码被拒绝(401)', pwdWrong.status === 401);
+const pwdNoUser = await call('POST', '/api/auth/login-password',
+  { body: { phone: '13000000000', password: 'whatever' } });
+check('未注册号码不泄露号码是否存在',
+  pwdNoUser.status === 401 && pwdNoUser.data?.error === pwdWrong.data?.error);
+
+const newAccount = await call('POST', '/api/admin/users', {
+  token: adminToken,
+  body: { phone: '13900000777', name: '测试录入员', role: 'data_operator' },
+});
+check('管理员新建账号并返回初始密码',
+  newAccount.status === 201 && typeof newAccount.data?.password === 'string'
+  && newAccount.data.password.length >= 6);
+const newAccountLogin = await call('POST', '/api/auth/login-password',
+  { body: { phone: '13900000777', password: newAccount.data?.password } });
+check('新建账号可用初始密码登录', newAccountLogin.status === 200,
+  `role=${newAccountLogin.data?.user?.role}`);
+const resetPwd = await call('PATCH', `/api/admin/users/${newAccount.data?.id}`,
+  { token: adminToken, body: { password: 'reset-by-admin' } });
+check('管理员重置成员密码', resetPwd.status === 200);
+const resetLogin = await call('POST', '/api/auth/login-password',
+  { body: { phone: '13900000777', password: 'reset-by-admin' } });
+check('重置后新密码生效', resetLogin.status === 200);
+const weakPwd = await call('POST', '/api/auth/register',
+  { body: { phone: '13900000666', name: '弱密码', password: '123' } });
+check('注册密码不足 6 位被拒绝', weakPwd.status === 400);
+
 const events = await call('GET', '/api/events', { token: adminToken });
 check('赛事列表含演示赛事', events.status === 200 && events.data?.length >= 2);
 
@@ -82,7 +116,7 @@ if (joinTarget) {
   const joinCode = (await call('POST', '/api/auth/send-code',
     { body: { phone: joinPhone, scene: 'register' } })).data?.demoCode;
   const joinReg = await call('POST', '/api/auth/register',
-    { body: { phone: joinPhone, name: '测试球员', code: joinCode } });
+    { body: { phone: joinPhone, name: '测试球员', password: 'test-1234', code: joinCode } });
   const joinToken = joinReg.data?.token;
   const joined = await call('POST', `/api/registrations/${joinTarget.id}/join`, {
     token: joinToken,
@@ -112,6 +146,12 @@ if (joinTarget) {
 const denied = await call('POST', `/api/registrations/${reviewId}/review`,
   { token: playerToken, body: { action: 'approve' } });
 check('参赛球员审核被拒绝(403)', denied.status === 403);
+
+const playerCreate = await call('POST', '/api/admin/users', {
+  token: playerToken,
+  body: { phone: '13900000555', name: '越权建号', role: 'admin' },
+});
+check('参赛球员新建账号被拒绝(403)', playerCreate.status === 403);
 
 const aiDenied = await call('POST', '/api/ai/recognize',
   { token: playerToken, body: { eventId: 'evt_demo1', images: [{ dataUrl: PNG }] } });

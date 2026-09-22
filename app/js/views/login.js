@@ -1,6 +1,8 @@
 import { api, session } from '../lib/api.js';
 import { el, clear, toast } from '../lib/ui.js';
 
+const DEMO_PASSWORD = '123456';
+
 const DEMO = [
   ['13900000001', 'lby', '管理员'],
   ['13900000003', 'ljz', '数据录入员'],
@@ -18,27 +20,30 @@ export async function renderLogin(container) {
       el('p', {}, '北理工校园足球赛事管理系统')),
   );
 
-  const modeState = { mode: 'login' };
+  const state = { mode: 'login', method: 'password' };
   const card = el('div', { class: 'card auth-card' });
   wrap.append(card);
-  renderAuthCard(card, modeState);
+  renderAuthCard(card, state);
 
   const demoBox = el('div', { class: 'card demo-box' },
     el('div', { class: 'row between' },
       el('b', {}, '演示账号（点击填入手机号）'),
-      el('span', { class: 'small muted' }, '演示环境验证码自动显示')),
+      el('span', { class: 'small muted' }, `登录密码统一为 ${DEMO_PASSWORD}`)),
     el('div', { class: 'demo-accounts' },
       DEMO.map(([phone, name, role]) => el('button', {
         type: 'button',
         onclick: () => {
-          modeState.mode = 'login';
-          renderAuthCard(card, modeState);
-          const input = card.querySelector('#login-phone');
-          if (input) {
-            input.value = phone;
-            input.dispatchEvent(new Event('input', { bubbles: true }));
+          state.mode = 'login';
+          state.method = 'password';
+          renderAuthCard(card, state);
+          const phoneInput = card.querySelector('#login-phone');
+          const pwdInput = card.querySelector('#login-password');
+          if (phoneInput) {
+            phoneInput.value = phone;
+            phoneInput.dispatchEvent(new Event('input', { bubbles: true }));
           }
-          toast(`已填入 ${name}（${role}）的手机号`);
+          if (pwdInput) pwdInput.value = DEMO_PASSWORD;
+          toast(`已填入 ${name}（${role}）的账号与密码`);
         },
       },
       el('span', {},
@@ -52,17 +57,34 @@ export async function renderLogin(container) {
 function renderAuthCard(card, state) {
   clear(card);
   const tabs = el('div', { class: 'auth-tabs' },
-    tabBtn('登录', state.mode === 'login', () => { state.mode = 'login'; renderAuthCard(card, state); }),
-    tabBtn('注册', state.mode === 'register', () => { state.mode = 'register'; renderAuthCard(card, state); }));
+    tabBtn('登录', state.mode === 'login', () => {
+      state.mode = 'login'; state.method = 'password'; renderAuthCard(card, state);
+    }),
+    tabBtn('注册', state.mode === 'register', () => {
+      state.mode = 'register'; renderAuthCard(card, state);
+    }));
   card.append(tabs);
-  if (state.mode === 'login') card.append(loginForm(card, state));
-  else card.append(registerForm(card, state));
+  if (state.mode === 'login' && state.method === 'code') card.append(codeLoginForm(card, state));
+  else if (state.mode === 'login') card.append(loginForm(card, state));
+  else card.append(registerForm(card));
 }
 
 function tabBtn(label, active, onClick) {
   return el('button', {
     class: `auth-tab ${active ? 'active' : ''}`,
     type: 'button',
+    onclick: onClick,
+  }, label);
+}
+
+function switchLink(label, onClick) {
+  return el('button', {
+    type: 'button',
+    style: {
+      background: 'none', border: 'none', padding: '10px 0 0',
+      color: '#0b7a43', fontSize: '13px', cursor: 'pointer',
+      textDecoration: 'underline', display: 'block', margin: '0 auto',
+    },
     onclick: onClick,
   }, label);
 }
@@ -119,8 +141,58 @@ function codeRow(phoneInput, scene) {
   };
 }
 
-function loginForm(card) {
-  const phoneInput = el('input', { id: 'login-phone', type: 'tel', maxlength: 11, inputmode: 'numeric', placeholder: '请输入手机号' });
+function loginForm(card, state) {
+  const phoneInput = el('input', {
+    id: 'login-phone', type: 'tel', maxlength: 11, inputmode: 'numeric',
+    placeholder: '请输入手机号', autocomplete: 'username',
+  });
+  const pwdInput = el('input', {
+    id: 'login-password', type: 'password',
+    placeholder: '请输入登录密码', autocomplete: 'current-password',
+  });
+  return el('div', {},
+    labelField('手机号', phoneInput),
+    labelField('密码', pwdInput),
+    el('button', {
+      id: 'login-btn', class: 'btn primary block', type: 'button',
+      style: { marginTop: '8px' },
+      onclick: async (e) => {
+        const btnEl = e.currentTarget;
+        if (!phoneInput.value.trim() || !pwdInput.value) {
+          toast('请输入手机号和密码', 'error');
+          return;
+        }
+        btnEl.disabled = true;
+        try {
+          const data = await api('/auth/login-password', {
+            method: 'POST', auth: false,
+            body: {
+              phone: phoneInput.value.trim(),
+              password: pwdInput.value,
+            },
+          });
+          session.save(data.token, data.user);
+          toast(`欢迎回来，${data.user.name}`, 'success');
+          location.hash = '#/home';
+        } catch (err) { toast(err.message, 'error'); }
+        btnEl.disabled = false;
+      },
+    }, '登 录'),
+    switchLink('使用短信验证码登录', () => {
+      state.method = 'code';
+      renderAuthCard(card, state);
+    }),
+    switchLink('忘记密码？请联系管理员重置', () => {
+      toast('请把姓名和手机号发给管理员，由管理员重置密码', 'success', 3600);
+    }),
+  );
+}
+
+function codeLoginForm(card, state) {
+  const phoneInput = el('input', {
+    id: 'login-phone', type: 'tel', maxlength: 11, inputmode: 'numeric',
+    placeholder: '请输入手机号',
+  });
   const row = codeRow(phoneInput, 'login');
   return el('div', {},
     labelField('手机号', phoneInput),
@@ -145,31 +217,48 @@ function loginForm(card) {
         } catch (err) { toast(err.message, 'error'); }
         btnEl.disabled = false;
       },
-    }, '登 录'));
+    }, '登 录'),
+    switchLink('改用手机号 + 密码登录', () => {
+      state.method = 'password';
+      renderAuthCard(card, state);
+    }),
+  );
 }
 
 function registerForm(card) {
   const nameInput = el('input', { id: 'reg-name', placeholder: '真实姓名' });
-  const phoneInput = el('input', { id: 'reg-phone', type: 'tel', maxlength: 11, inputmode: 'numeric', placeholder: '请输入手机号' });
-  const row = codeRow(phoneInput, 'register');
+  const phoneInput = el('input', {
+    id: 'reg-phone', type: 'tel', maxlength: 11, inputmode: 'numeric',
+    placeholder: '请输入手机号',
+  });
+  const pwdInput = el('input', {
+    id: 'reg-password', type: 'password', placeholder: '设置密码（至少 6 位）',
+  });
+  const pwd2Input = el('input', {
+    id: 'reg-password2', type: 'password', placeholder: '请再次输入密码',
+  });
   return el('div', {},
     labelField('姓名', nameInput),
     labelField('手机号', phoneInput),
-    labelField('验证码', row.wrap),
+    labelField('密码', pwdInput),
+    labelField('确认密码', pwd2Input),
     el('button', {
       id: 'register-btn', class: 'btn primary block', type: 'button',
       style: { marginTop: '8px' },
       onclick: async (e) => {
         const btnEl = e.currentTarget;
+        const name = nameInput.value.trim();
+        const phone = phoneInput.value.trim();
+        const password = pwdInput.value;
+        if (!name) { toast('请填写真实姓名', 'error'); return; }
+        if (!/^1\d{10}$/.test(phone)) { toast('请输入正确的 11 位手机号', 'error'); return; }
+        if (password.length < 6) { toast('密码至少 6 位', 'error'); return; }
+        if (password !== pwd2Input.value) { toast('两次输入的密码不一致', 'error'); return; }
         btnEl.disabled = true;
         try {
           const data = await api('/auth/register', {
             method: 'POST', auth: false,
-            body: {
-              name: nameInput.value.trim(),
-              phone: phoneInput.value.trim(),
-              code: row.input.value.trim(),
-            },
+            body: { name, phone, password },
           });
           session.save(data.token, data.user);
           toast('注册成功，已自动登录', 'success');

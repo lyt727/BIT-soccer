@@ -18,7 +18,7 @@ async function main() {
   const db = getDb();
   const isSqlite = config.dbDriver === 'sqlite';
   if (isSqlite && seedIfEmpty(db)) {
-    console.log('[seed] 已写入演示数据（手机号验证码登录，演示验证码自动显示在页面）');
+    console.log(`[seed] 已写入演示数据（手机号 + 密码登录，初始密码 ${config.demoPassword}）`);
   }
 
   const router = new ApiRouter();
@@ -42,7 +42,7 @@ async function main() {
     console.log(`  本地访问：  http://localhost:${config.port}`);
     console.log(`  手机同网：  http://<本机局域网IP>:${config.port}`);
     console.log('------------------------------------------------');
-    console.log('  演示账号（手机号验证码登录）');
+    console.log(`  演示账号（手机号 + 密码登录，初始密码 ${config.demoPassword}）`);
     console.log('    13900000001  lby（管理员）');
     console.log('    13900000003  ljz（数据录入员）');
     console.log('    13800138001  zht（参赛球员）');

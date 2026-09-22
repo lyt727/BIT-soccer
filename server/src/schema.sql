@@ -1,5 +1,5 @@
 -- 绿茵BIT 演示库 DDL（SQLite）
--- 账号体系：手机号 + 短信验证码
+-- 账号体系：手机号 + 密码（可选：短信验证码登录）
 -- 角色：admin（管理员）/ data_operator（数据录入员）/ player（参赛球员）
 CREATE TABLE IF NOT EXISTS users (
   id TEXT PRIMARY KEY,
@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS users (
   name TEXT NOT NULL,
   role TEXT NOT NULL CHECK (role IN ('admin','data_operator','player')),
   emp_id TEXT,
+  password_hash TEXT,
   status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
   created_at TEXT NOT NULL,
   updated_at TEXT

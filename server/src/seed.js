@@ -1,3 +1,9 @@
+import { hashPassword } from './security.js';
+import { config } from './config.js';
+
+// 演示账号初始密码（正式使用前请登录后在“成员与角色管理”里重置或停用）
+const DEMO_PASSWORD = config.demoPassword;
+
 // 演示数据（V3）：
 //  主赛事：15 支球队，A/B/C/D 四组（4/4/4/3），每队 15 人（主教练+领队+队长+队员）
 //  新生杯：保留少量球队用于报名/加入/审核演示
@@ -100,10 +106,10 @@ export function seedIfEmpty(db) {
   const now = new Date().toISOString();
 
   const insertUser = db.prepare(
-    `INSERT INTO users (id, phone, name, role, emp_id, status, created_at)
-     VALUES (?, ?, ?, ?, ?, 'active', ?)`);
+    `INSERT INTO users (id, phone, name, role, emp_id, password_hash, status, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`);
   for (const [id, phone, name, role, empId] of users) {
-    insertUser.run(id, phone, name, role, empId, now);
+    insertUser.run(id, phone, name, role, empId, hashPassword(DEMO_PASSWORD), now);
   }
 
   const insertEvent = db.prepare(

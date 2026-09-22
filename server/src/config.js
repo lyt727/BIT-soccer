@@ -37,6 +37,13 @@ export const config = {
   // 短信验证码：demo（本地演示，验证码直接返回）/ tencent / aliyun / webhook
   smsMode: process.env.SMS_MODE || 'demo',
   smsProvider: process.env.SMS_PROVIDER || '',
+  // 演示验证码：仅在非生产环境默认开启。生产环境必须通过真实短信通道下发，
+  // 否则任何人拿到手机号即可登录任意账号。需要时用 ALLOW_DEMO_CODE=true 显式放开。
+  allowDemoCode: process.env.ALLOW_DEMO_CODE
+    ? process.env.ALLOW_DEMO_CODE === 'true'
+    : process.env.NODE_ENV !== 'production',
+  // 演示账号（以及历史无密码账号）的初始密码，可用 DEMO_PASSWORD 覆盖
+  demoPassword: process.env.DEMO_PASSWORD || '123456',
   smsCodeTtlSeconds: Number(process.env.SMS_CODE_TTL_SECONDS || 300),
   smsResendSeconds: Number(process.env.SMS_RESEND_SECONDS || 60),
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',

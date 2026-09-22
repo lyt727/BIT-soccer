@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { config } from './config.js';
+import { hashPassword } from './security.js';
 
 const require = createRequire(import.meta.url);
 let store = null;
@@ -21,6 +22,31 @@ class SqliteStore {
     this.db.exec('PRAGMA foreign_keys = ON;');
     const ddlPath = new URL('./schema.sql', import.meta.url);
     this.db.exec(fs.readFileSync(ddlPath, 'utf8'));
+    this.migrateSchema();
+  }
+
+  // 增量迁移：为老库补上后加的列（幂等，可反复执行）
+  migrateSchema() {
+    if (this.addColumnIfMissing('users', 'password_hash', 'TEXT')) {
+      this.backfillPasswords();
+    }
+  }
+
+  // 历史账号（手机号+验证码时代创建）没有密码，给一个初始密码，避免升级后无法登录
+  backfillPasswords() {
+    const rows = this.db.prepare('SELECT id FROM users WHERE password_hash IS NULL').all();
+    if (!rows.length) return;
+    const stmt = this.db.prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+    for (const row of rows) stmt.run(hashPassword(config.demoPassword), row.id);
+    console.log(`[migrate] ${rows.length} 个历史账号已设置初始密码 ${config.demoPassword}，请登录后尽快修改`);
+  }
+
+  addColumnIfMissing(table, column, type) {
+    const cols = this.db.prepare(`PRAGMA table_info(${table})`).all();
+    if (cols.some((c) => c.name === column)) return false;
+    this.db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+    console.log(`[migrate] ${table} 新增列 ${column}`);
+    return true;
   }
 
   prepare(sql) {

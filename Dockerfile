@@ -7,6 +7,7 @@ COPY server ./server
 COPY app ./app
 COPY database ./database
 COPY docs ./docs
+COPY scripts ./scripts
 
 ENV NODE_ENV=production
 ENV PORT=3000

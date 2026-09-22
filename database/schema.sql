@@ -9,12 +9,16 @@ CREATE TABLE IF NOT EXISTS users (
   name       TEXT NOT NULL,
   role       TEXT NOT NULL CHECK (role IN ('admin','data_operator','player')),
   emp_id     TEXT,
+  password_hash TEXT,
   status     TEXT NOT NULL DEFAULT 'active'
              CHECK (status IN ('active','disabled')),
   created_at TEXT NOT NULL,
   updated_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+-- 已上线库的增量迁移（新库执行上面建表语句即可，此句幂等可重复执行）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
 
 CREATE TABLE IF NOT EXISTS events (
   id          TEXT PRIMARY KEY,

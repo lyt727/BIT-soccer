@@ -6,18 +6,26 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | /auth/send-code | 发送短信验证码（scene: login/register）|
-| POST | /auth/login-code | 手机号 + 验证码登录 |
-| POST | /auth/register | 手机号注册（自动成为参赛球员）|
+| POST | /auth/login-password | 手机号 + 密码登录（**默认登录方式**）|
+| POST | /auth/register | 手机号 + 姓名 + 密码注册（自动成为参赛球员）|
+| POST | /auth/send-code | 发送短信验证码（scene: login/register；需配置短信通道）|
+| POST | /auth/login-code | 手机号 + 验证码登录（短信通道的备选登录方式）|
 | GET | /auth/me | 当前用户与能力 |
+
+说明：
+
+- 密码 6–64 位，服务端用 scrypt 加盐散列存储（Cloudflare 版为 PBKDF2-SHA256 / 10 万轮），任何接口都不返回 `password_hash`。
+- 账号不存在与密码错误返回同一句提示，避免暴露手机号是否已注册。
+- 登录失败会写审计日志（`auth.login_failed`），含来源 IP。
+- 演示验证码只在非生产环境（未设置 `NODE_ENV=production`）回显；生产环境需配置真实短信通道，否则 `/auth/send-code` 返回 `SMS_NOT_CONFIGURED`。
 
 ## 用户与权限
 
 | 方法 | 路径 | 权限 |
 |---|---|---|
 | GET | /admin/users | user.view |
-| POST | /admin/users | user.manage |
-| PATCH | /admin/users/:id | user.manage |
+| POST | /admin/users | user.manage —— 可传 `password` 设初始密码，不传则自动生成并在响应里返回 |
+| PATCH | /admin/users/:id | user.manage —— 可改角色 / 停用启用 / 传 `password` 重置密码 |
 | GET | /audit | user.view |
 
 ## 赛事

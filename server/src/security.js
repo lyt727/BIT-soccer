@@ -18,6 +18,25 @@ export function verifyPassword(password, stored) {
   return crypto.timingSafeEqual(expected, actual);
 }
 
+// 密码强度校验：返回空字符串表示通过，否则返回错误说明
+export function passwordIssue(password) {
+  const pwd = String(password ?? '');
+  if (!pwd) return '请设置登录密码';
+  if (pwd.length < 6) return '密码至少 6 位';
+  if (pwd.length > 64) return '密码不能超过 64 位';
+  if (!pwd.trim()) return '密码不能全是空格';
+  return '';
+}
+
+// 管理员新建账号时若无初始密码，生成一个易读的随机密码
+export function randomPassword(length = 8) {
+  const alphabet = 'abcdefghjkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  const bytes = crypto.randomBytes(length);
+  let out = '';
+  for (let i = 0; i < length; i += 1) out += alphabet[bytes[i] % alphabet.length];
+  return out;
+}
+
 function b64url(buf) {
   return Buffer.from(buf).toString('base64url');
 }

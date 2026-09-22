@@ -143,7 +143,10 @@ export function createApiServer(router, staticHandler) {
         console.error('[server error]', err);
       }
       sendJson(res, status, {
-        error: status >= 500 ? '服务器内部错误，请稍后重试' : err.message,
+        // 5xx 默认隐藏细节；主动标记 expose 的业务错误（如短信未配置）照实返回
+        error: (status >= 500 && err.expose !== true)
+          ? '服务器内部错误，请稍后重试'
+          : err.message,
         code: err.code || 'ERROR',
       });
     }
