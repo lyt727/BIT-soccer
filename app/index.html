@@ -9,6 +9,25 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/css/app.css?v=4">
+  <!--
+    刷新前会把滚动位置与页面高度存进 sessionStorage。
+    这里在首帧渲染之前就把高度撑回去并滚到原位，
+    避免"先看到顶部、等数据回来再跳下去"的闪动。
+  -->
+  <script>
+    (function () {
+      try {
+        // 自己接管滚动恢复，避免和浏览器自带的恢复互相打架造成二次跳动
+        if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+        var y = Number(sessionStorage.getItem('gb_restore_scroll') || 0);
+        var h = Number(sessionStorage.getItem('gb_restore_height') || 0);
+        if (h > 0) {
+          document.documentElement.style.minHeight = h + 'px';
+          if (y > 0) window.scrollTo(0, y);
+        }
+      } catch (e) { /* 隐私模式下忽略 */ }
+    })();
+  </script>
 </head>
 <body>
   <div id="app">

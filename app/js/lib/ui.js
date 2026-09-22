@@ -32,26 +32,37 @@ export function clear(node) {
 // 编辑保存后常需要整体重渲染；直接 reload / 清空重画会把页面滚回顶部，
 // 这里在刷新前记住位置，路由渲染完成后恢复，避免长列表里"跳回顶部"。
 const SCROLL_KEY = 'gb_restore_scroll';
+const HEIGHT_KEY = 'gb_restore_height';
 
 export function reloadKeepingScroll() {
   try {
     sessionStorage.setItem(SCROLL_KEY, String(Math.round(window.scrollY || 0)));
+    sessionStorage.setItem(HEIGHT_KEY, String(Math.round(
+      document.documentElement.scrollHeight || 0,
+    )));
   } catch { /* 隐私模式下忽略 */ }
   location.reload();
 }
 
 export function restoreScrollIfNeeded() {
   let y = 0;
+  let h = 0;
   try {
     y = Number(sessionStorage.getItem(SCROLL_KEY) || 0);
+    h = Number(sessionStorage.getItem(HEIGHT_KEY) || 0);
     if (y) sessionStorage.removeItem(SCROLL_KEY);
-  } catch { y = 0; }
+    if (h) sessionStorage.removeItem(HEIGHT_KEY);
+  } catch { y = 0; h = 0; }
+  // index.html 里的内联脚本已提前撑高并定位；内容渲染完成后撤掉临时高度。
+  // 剩余高度差导致的位置偏移在一帧后校正一次（不可见）。
+  document.documentElement.style.minHeight = '';
   if (!y) return;
-  // 同步执行，和渲染在同一帧完成，用户看不到"先到顶再滚回来"
   window.scrollTo(0, y);
-  requestAnimationFrame(() => {
-    if (Math.abs((window.scrollY || 0) - y) > 8) window.scrollTo(0, y);
-  });
+  if (typeof requestAnimationFrame === 'function') {
+    requestAnimationFrame(() => {
+      if (Math.abs((window.scrollY || 0) - y) > 8) window.scrollTo(0, y);
+    });
+  }
 }
 
 // 页面内局部重建时用：把离屏渲染好的内容一次性替换进容器，并保持滚动位置
