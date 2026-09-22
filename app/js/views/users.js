@@ -1,5 +1,5 @@
 import { api, session, hasPerm } from '../lib/api.js';
-import { el, clear, toast, badge, empty, btn, openModal } from '../lib/ui.js';
+import { el, clear, toast, badge, empty, btn, openModal, reloadKeepingScroll } from '../lib/ui.js';
 
 const ROLE_BADGE = {
   admin: 'admin',
@@ -45,7 +45,7 @@ function userCard(u, page) {
               body: { status: u.status === 'active' ? 'disabled' : 'active' },
             });
             toast('账号状态已更新', 'success');
-            location.reload();
+            reloadKeepingScroll();
           } catch (err) { toast(err.message, 'error'); }
         },
       }),
@@ -123,7 +123,7 @@ function showCredentialModal(name, phone, password) {
   });
   modal.setFoot([btn('知道了', {
     type: 'primary',
-    onClick: () => { modal.close(); location.reload(); },
+    onClick: () => { modal.close(); reloadKeepingScroll(); },
   })]);
 }
 
@@ -185,7 +185,7 @@ function changeRoleModal(u) {
       });
       modal.close();
       toast('角色已更新', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([btn('取消', { onClick: () => modal.close() }),

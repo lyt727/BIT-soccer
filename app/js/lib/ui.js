@@ -28,6 +28,36 @@ export function clear(node) {
   return node;
 }
 
+// ---- 滚动位置保持 ----
+// 编辑保存后常需要整体重渲染；直接 reload / 清空重画会把页面滚回顶部，
+// 这里在刷新前记住位置，路由渲染完成后恢复，避免长列表里"跳回顶部"。
+const SCROLL_KEY = 'gb_restore_scroll';
+
+export function reloadKeepingScroll() {
+  try {
+    sessionStorage.setItem(SCROLL_KEY, String(Math.round(window.scrollY || 0)));
+  } catch { /* 隐私模式下忽略 */ }
+  location.reload();
+}
+
+export function restoreScrollIfNeeded() {
+  let y = 0;
+  try {
+    y = Number(sessionStorage.getItem(SCROLL_KEY) || 0);
+    if (y) sessionStorage.removeItem(SCROLL_KEY);
+  } catch { y = 0; }
+  if (y > 0) {
+    requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
+  }
+}
+
+// 同一页面内重建内容时用：记住位置 → 重建 → 恢复
+export async function rebuildKeepingScroll(rebuild) {
+  const y = window.scrollY || 0;
+  await rebuild();
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
 export function toast(message, type = 'info', ms = 2400) {
   const root = document.getElementById('toast-root');
   const t = el('div', { class: `toast ${type}`, role: 'status' }, message);

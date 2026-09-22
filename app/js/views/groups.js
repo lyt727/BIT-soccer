@@ -1,5 +1,5 @@
 import { api, session } from '../lib/api.js';
-import { el, clear, toast, btn, empty, openModal } from '../lib/ui.js';
+import { el, clear, toast, btn, empty, openModal, reloadKeepingScroll } from '../lib/ui.js';
 
 export async function renderGroups(container, event) {
   clear(container);
@@ -89,7 +89,7 @@ function drawFlow(event, approved, groups) {
         });
         modal.close();
         toast(data.message, 'success');
-        location.reload();
+        reloadKeepingScroll();
       } catch (err) { toast(err.message, 'error'); }
     },
   });
@@ -153,7 +153,7 @@ function leagueDrawFlow(event, approved, hasMatches) {
         });
         modal.close();
         toast(data.message, 'success');
-        location.reload();
+        reloadKeepingScroll();
       } catch (err) { toast(err.message, 'error'); }
     },
   });

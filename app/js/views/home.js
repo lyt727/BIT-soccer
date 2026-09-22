@@ -1,5 +1,5 @@
 import { api, session, hasPerm } from '../lib/api.js';
-import { el, clear, toast, btn, openModal, confirmBox, statusBadge, empty } from '../lib/ui.js';
+import { el, clear, toast, btn, openModal, confirmBox, statusBadge, empty, reloadKeepingScroll } from '../lib/ui.js';
 
 const STATUS_TEXT = { pending: '待开始', signup: '报名中', live: '进行中', ended: '已结束' };
 
@@ -95,7 +95,7 @@ async function removeEvent(evt) {
     await api(`/events/${evt.id}`, { method: 'DELETE' });
     toast('赛事已删除', 'success');
     location.hash = '#/home';
-    location.reload();
+    reloadKeepingScroll();
   } catch (err) {
     toast(err.message, 'error');
   }

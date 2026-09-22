@@ -1,5 +1,5 @@
 import { session, api, hasPerm } from './lib/api.js';
-import { el, clear, toast, openModal, btn } from './lib/ui.js';
+import { el, clear, toast, openModal, btn, restoreScrollIfNeeded } from './lib/ui.js';
 import { renderHome } from './views/home.js';
 import { renderLogin } from './views/login.js';
 import { renderEvent } from './views/event-detail.js';
@@ -108,6 +108,7 @@ export async function route() {
   renderTop({});
   renderBottom(name);
   await render(view, params);
+  restoreScrollIfNeeded();
 }
 
 function openProfile() {

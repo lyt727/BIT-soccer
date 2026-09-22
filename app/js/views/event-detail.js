@@ -1,5 +1,5 @@
 import { api, session, hasPerm } from '../lib/api.js';
-import { el, clear, toast, btn, openModal, statusBadge, statBox, empty } from '../lib/ui.js';
+import { el, clear, toast, btn, openModal, statusBadge, statBox, empty, reloadKeepingScroll } from '../lib/ui.js';
 import { renderTop } from '../app.js';
 import { renderRegistrations } from './registrations.js';
 import { renderGroups } from './groups.js';
@@ -135,7 +135,7 @@ function openEventEdit(event) {
       });
       modal.close();
       toast('赛事信息已更新', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([
@@ -159,7 +159,7 @@ function openStatusSwitch(event) {
             });
             modal.close();
             toast(`赛事状态已更新为「${data.statusText}」`, 'success');
-            setTimeout(() => location.reload(), 300);
+    setTimeout(() => reloadKeepingScroll(), 300);
           } catch (err) { toast(err.message, 'error'); }
         },
       }, STATUS_TEXT[s]))),

@@ -1,6 +1,7 @@
 import { api, session, hasPerm } from '../lib/api.js';
 import {
   el, clear, toast, btn, empty, openModal, badge, statBox, confirmBox,
+  reloadKeepingScroll, rebuildKeepingScroll,
 } from '../lib/ui.js';
 import { fileToDataUrl } from '../lib/api.js';
 import { exportExcel } from '../lib/export.js';
@@ -40,7 +41,8 @@ export async function renderStats(container, event) {
 
 export async function renderLeaderboards(container, event) {
   clear(container);
-  const reload = () => renderLeaderboards(container, event);
+  // 榜单/停赛名单里改完数据后原地重建，但保持当前滚动位置
+  const reload = () => rebuildKeepingScroll(() => renderLeaderboards(container, event));
   try {
     const format = event.format || 'group_knockout';
     const [leagueStandings, groupStandings, scorers, cards] = await Promise.all([
@@ -595,7 +597,7 @@ function openManualResult(event, matches, prefill = null) {
       });
       modal.close();
       toast(prefill ? '识别数据已核对并提交，榜单已更新' : '比赛结果已提交，榜单已自动更新', 'success');
-      setTimeout(() => location.reload(), 400);
+      setTimeout(() => reloadKeepingScroll(), 400);
     } catch (err) {
       toast(err.message, 'error', 3800);
     }

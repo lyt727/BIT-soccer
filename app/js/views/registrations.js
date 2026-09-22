@@ -1,6 +1,7 @@
 import { api, session, hasPerm, apiBlob, fileToDataUrl } from '../lib/api.js';
 import {
   el, clear, toast, btn, empty, confirmBox, statusBadge as uiStatusBadge, badge, openModal,
+  reloadKeepingScroll,
 } from '../lib/ui.js';
 
 function regStatusBadge(status) {
@@ -54,7 +55,7 @@ export async function renderRegistrations(container, event) {
     if (canSubmit && !rows.some((r) => r.isMyTeam)) {
       container.append(el('button', {
         class: 'btn primary block', type: 'button', style: { marginTop: '12px' },
-        onclick: () => openSubmitForm(event, () => location.reload()),
+        onclick: () => openSubmitForm(event, () => reloadKeepingScroll()),
       }, '＋ 我也要报名（整队名单）'));
     }
     return;
@@ -80,7 +81,7 @@ export async function renderRegistrations(container, event) {
   if (canSubmit && !rows.some((r) => r.isMyTeam)) {
     container.append(el('button', {
       class: 'btn primary block', type: 'button', style: { marginTop: '10px' },
-      onclick: () => openSubmitForm(event, () => location.reload()),
+      onclick: () => openSubmitForm(event, () => reloadKeepingScroll()),
     }, '＋ 提交球队报名（整队名单）'));
   }
 }
@@ -93,7 +94,7 @@ function playerTeamItem(reg, event, mine, canSubmit, myTeam) {
       const full = (mine || []).find((m) => m.id === reg.id);
       actions.append(btn('✎ 编辑整队名单', {
         cls: 'sm', type: 'outline',
-        onClick: () => openSubmitForm(event, () => location.reload(), full || reg),
+        onClick: () => openSubmitForm(event, () => reloadKeepingScroll(), full || reg),
       }));
     }
     actions.append(btn('🪪 完善我的学生卡', {
@@ -175,7 +176,7 @@ async function cancelRegistration(reg) {
   try {
     const data = await api(`/registrations/${reg.id}/me`, { method: 'DELETE' });
     toast(data.message, 'success');
-    location.reload();
+    reloadKeepingScroll();
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -253,7 +254,7 @@ function joinTeamModal(event, reg) {
           });
           modal.close();
           toast('已加入球队，等待统一审核', 'success');
-          location.reload();
+          reloadKeepingScroll();
         } catch (err) { toast(err.message, 'error'); }
       },
     }),
@@ -315,7 +316,7 @@ function selfCardModal(event, reg) {
           });
           modal.close();
           toast('个人信息已更新', 'success');
-          location.reload();
+          reloadKeepingScroll();
         } catch (err) { toast(err.message, 'error'); }
       },
     }),
@@ -374,7 +375,7 @@ function adminItem(reg, pending, event, myTeam) {
               method: 'POST', body: { action: 'approve' },
             });
             toast('已通过，球队进入已报名名单', 'success');
-            location.reload();
+            reloadKeepingScroll();
           } catch (err) { toast(err.message, 'error'); }
         },
       }),
@@ -430,7 +431,7 @@ function rejectFlow(reg) {
           });
           modal.close();
           toast('已拒绝该球队报名', 'success');
-          location.reload();
+          reloadKeepingScroll();
         } catch (err) { toast(err.message, 'error'); }
       },
     }),
@@ -455,7 +456,7 @@ function myItem(reg, event) {
     event.status === 'signup'
       ? el('button', {
         class: 'btn primary block', type: 'button', style: { marginTop: '12px' },
-        onclick: () => openSubmitForm(event, () => location.reload(), reg),
+        onclick: () => openSubmitForm(event, () => reloadKeepingScroll(), reg),
       }, '✎ 编辑队员名单')
       : null);
 }

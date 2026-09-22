@@ -1,5 +1,5 @@
 import { api, session, hasPerm } from '../lib/api.js';
-import { el, clear, toast, btn, empty, badge, openModal } from '../lib/ui.js';
+import { el, clear, toast, btn, empty, badge, openModal, reloadKeepingScroll } from '../lib/ui.js';
 
 export async function renderStaff(container, event) {
   clear(container);
@@ -32,7 +32,7 @@ export async function renderStaff(container, event) {
               try {
                 await api(`/events/${event.id}/staff/${row.id}`, { method: 'DELETE' });
                 toast('已移除', 'success');
-                location.reload();
+                reloadKeepingScroll();
               } catch (err) { toast(err.message, 'error'); }
             },
           })
@@ -62,7 +62,7 @@ function addOperatorFlow(event) {
       });
       modal.close();
       toast('数据录入员已添加', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([

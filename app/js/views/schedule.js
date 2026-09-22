@@ -1,5 +1,7 @@
 import { api, session, hasPerm } from '../lib/api.js';
-import { el, clear, toast, btn, empty, confirmBox, openModal, badge, statusBadge } from '../lib/ui.js';
+import {
+  el, clear, toast, btn, empty, confirmBox, openModal, badge, statusBadge, reloadKeepingScroll,
+} from '../lib/ui.js';
 import { openAiFlow } from './stats.js';
 import { exportExcel } from '../lib/export.js';
 
@@ -194,7 +196,7 @@ function staffBlock(m, canEdit) {
           for (const [key] of STAFF_FIELDS) matchStaff[key] = inputs[key].value.trim();
           await api(`/matches/${m.id}/staff`, { method: 'PATCH', body: { matchStaff } });
           toast('比赛工作人员已保存', 'success');
-          location.reload();
+          reloadKeepingScroll();
         } catch (err) { toast(err.message, 'error'); }
       },
     }));
@@ -249,7 +251,7 @@ async function addMatchFlow(event, forcedStage = null) {
       await api(`/events/${event.id}/matches`, { method: 'POST', body: payload });
       modal.close();
       toast('比赛已加入赛程', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([btn('取消', { onClick: () => modal.close() }),
@@ -272,7 +274,7 @@ async function editMatchFlow(event, match) {
       await api(`/matches/${match.id}`, { method: 'PATCH', body: payload });
       modal.close();
       toast('赛程信息已更新', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([btn('取消', { onClick: () => modal.close() }),
@@ -439,7 +441,7 @@ async function deleteMatch(match) {
   try {
     await api(`/matches/${match.id}`, { method: 'DELETE' });
     toast('比赛已删除', 'success');
-    location.reload();
+    reloadKeepingScroll();
   } catch (err) { toast(err.message, 'error'); }
 }
 
@@ -462,7 +464,7 @@ function editNoteModal(m) {
       await api(`/matches/${m.id}/note`, { method: 'PATCH', body: { specialNote: text } });
       modal.close();
       toast('特殊情况说明已更新', 'success');
-      location.reload();
+      reloadKeepingScroll();
     } catch (err) { toast(err.message, 'error'); }
   };
   modal.setFoot([
