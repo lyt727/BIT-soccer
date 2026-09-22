@@ -418,3 +418,109 @@ td.num, th.num { text-align: right; }
   .grid.cols-2 { gap: 14px; }
   .page { padding: 20px 22px 40px; }
 }
+
+/* ============================================================
+   视觉打磨层
+   —— 纯样式覆盖：选择器与原有完全一致，只调整观感，
+      不改变任何结构、文案与交互行为。
+   ============================================================ */
+
+:root {
+  --bg: #f1f6f3;
+  --text: #16231d;
+  --muted: #66766e;
+  --line: #e3eae6;
+  --radius-sm: 10px;
+  --radius-lg: 18px;
+  --shadow-sm: 0 1px 2px rgba(16, 48, 33, .04), 0 1px 3px rgba(16, 48, 33, .06);
+  --shadow: 0 1px 2px rgba(16, 48, 33, .04), 0 6px 18px rgba(16, 48, 33, .07);
+  --shadow-lg: 0 10px 30px rgba(16, 48, 33, .12);
+  --ring: 0 0 0 3px rgba(11, 122, 67, .16);
+}
+
+/* 页面底色：顶部一层很淡的主色光晕，整体更有纵深 */
+body {
+  background:
+    radial-gradient(1200px 460px at 50% -260px, rgba(11, 122, 67, .10), transparent 70%),
+    var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* 顶栏：轻微毛玻璃，滚动时层次更清楚 */
+#topbar {
+  background: rgba(255, 255, 255, .88);
+  backdrop-filter: saturate(1.6) blur(10px);
+  -webkit-backdrop-filter: saturate(1.6) blur(10px);
+  border-bottom-color: var(--line);
+}
+
+/* 卡片类容器：统一阴影与过渡 */
+.card, .table-card, .group-card, .stat-box, .list-item {
+  box-shadow: var(--shadow-sm);
+  transition: box-shadow .18s ease, border-color .18s ease;
+}
+.card:hover, .table-card:hover { box-shadow: var(--shadow); }
+
+/* 按钮：主按钮带一点浮起，点击有下沉反馈 */
+.btn {
+  border-radius: var(--radius-sm);
+  transition: transform .12s ease, box-shadow .18s ease, background-color .18s ease, filter .18s ease;
+}
+.btn.primary { box-shadow: 0 2px 8px rgba(11, 122, 67, .26); }
+.btn.primary:hover { box-shadow: 0 5px 16px rgba(11, 122, 67, .32); }
+.btn:active { transform: translateY(1px); }
+
+/* 表单控件：圆角统一，聚焦更清晰 */
+input, select, textarea { border-radius: var(--radius-sm); }
+input:focus, select:focus, textarea:focus { box-shadow: var(--ring); }
+input::placeholder, textarea::placeholder { color: #9aa8a1; }
+
+/* 表格：表头有层次、数据行斑马纹、悬浮高亮 */
+th {
+  background: linear-gradient(180deg, #f8fbf9, #f1f7f3);
+  color: #5a6a62;
+  font-weight: 600;
+  letter-spacing: .2px;
+}
+tbody tr:nth-child(even) td { background: #fbfdfc; }
+tbody tr:hover td { background: #f3f9f5; }
+td { padding: 11px 10px; }
+td:first-child, th:first-child { padding-left: 14px; }
+td:last-child, th:last-child { padding-right: 14px; }
+
+/* 表格横向滚动条：细一点，不抢视线 */
+.table-wrap { scrollbar-width: thin; }
+.table-wrap::-webkit-scrollbar { height: 8px; }
+.table-wrap::-webkit-scrollbar-thumb { background: #cdd8d2; border-radius: 999px; }
+.table-wrap::-webkit-scrollbar-track { background: transparent; }
+
+/* 标签栏：切换更顺滑，选中态更明确 */
+.tab {
+  transition: background-color .18s ease, color .18s ease, box-shadow .18s ease;
+}
+.tab.active { box-shadow: var(--shadow-sm); }
+
+/* 徽章：更紧凑的胶囊 */
+.badge { border-radius: 999px; padding: 2px 9px; letter-spacing: .2px; }
+
+/* 列表项：悬浮时边框轻微加深 */
+.list-item { border-radius: var(--radius); }
+.list-item:hover { border-color: #d5e3da; }
+
+/* 分组卡片与赛事横幅：标题区更有质感 */
+.group-card h3 { background: linear-gradient(180deg, #f8fbf9, #f2f8f4); }
+.event-banner { box-shadow: 0 8px 24px rgba(7, 94, 50, .20); }
+
+/* 弹窗：更沉稳的阴影与遮罩层次 */
+.modal { border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
+.overlay {
+  backdrop-filter: blur(2px);
+  -webkit-backdrop-filter: blur(2px);
+}
+
+/* 尊重系统「减少动态效果」设置 */
+@media (prefers-reduced-motion: reduce) {
+  * { transition-duration: .001ms !important; animation-duration: .001ms !important; }
+}
