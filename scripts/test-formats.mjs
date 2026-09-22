@@ -255,5 +255,42 @@ console.log('\n【四、抽签范围、手动排赛与比赛编辑权限】');
   ok('数据录入员可删除比赛', delByOp.status === 200, delByOp.data?.error || '');
 }
 
+// ============ 五、赛事状态与比赛增改 ============
+console.log('\n【五、赛事状态与比赛增改】');
+{
+  const opTok = (await call('POST', '/api/auth/login-password',
+    { body: { phone: '13900000003', password: '123456' } })).data.token;
+
+  // 报名中的演示赛事：不能手动添加比赛
+  const signupAdd = await call('POST', '/api/events/evt_demo2/matches', {
+    token: adminToken,
+    body: { stage: 'group', groupName: 'A', teamAId: 'reg_e2_1', teamBId: 'reg_e2_2' },
+  });
+  ok('报名中状态不能手动添加比赛', signupAdd.status === 400, signupAdd.data?.error || '');
+
+  // 进行中：可以编辑单场比赛信息
+  const liveMatch = (await call('GET', '/api/events/evt_demo1/matches', { token: adminToken })).data[0];
+  const liveEdit = await call('PATCH', `/api/matches/${liveMatch.id}`,
+    { token: adminToken, body: { venue: '西操场 1 号场' } });
+  ok('进行中状态可以编辑比赛信息', liveEdit.status === 200, liveEdit.data?.error || '');
+
+  // 已结束：管理员与数据录入员都仍可编辑
+  await call('PATCH', '/api/events/evt_demo1/status',
+    { token: adminToken, body: { status: 'ended' } });
+  const endedEditOp = await call('PATCH', `/api/matches/${liveMatch.id}`,
+    { token: opTok, body: { venue: '西操场 2 号场' } });
+  ok('已结束状态数据录入员仍可编辑比赛信息',
+    endedEditOp.status === 200, endedEditOp.data?.error || '');
+  const endedAdd = await call('POST', '/api/events/evt_demo1/matches', {
+    token: adminToken,
+    body: { stage: 'group', groupName: 'A', teamAId: 'reg_e1_1', teamBId: 'reg_e1_2' },
+  });
+  ok('已结束状态不能添加比赛', endedAdd.status === 400, endedAdd.data?.error || '');
+  await call('PATCH', '/api/events/evt_demo1/status',
+    { token: adminToken, body: { status: 'live' } });
+  const backLive = await call('GET', '/api/events/evt_demo1', { token: adminToken });
+  ok('演示赛事状态已还原为进行中', backLive.data?.status === 'live');
+}
+
 console.log(`\n共 ${pass + fail} 项，失败 ${fail} 项`);
 process.exit(fail ? 1 : 0);
