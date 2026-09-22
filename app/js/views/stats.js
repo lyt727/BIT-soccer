@@ -84,7 +84,7 @@ export async function renderLeaderboards(container, event) {
     box.append(scorersTable(scorers));
 
     box.append(sectionWithExport(
-      '红牌榜', '红牌停赛至少一轮', `${event.name}-红牌榜`,
+      '红牌记录', '红牌停赛至少一轮', `${event.name}-红牌记录`,
       ['球队', '球员', '号码', '红牌数', '停赛场次', '状态', '备注'],
       cards.reds.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.redCards, `${r.matches || 1} 场`, r.statusLabel || '', r.note || '']),
@@ -93,7 +93,7 @@ export async function renderLeaderboards(container, event) {
     const canSetThreshold = hasPerm(session.user, 'event.status.update');
     const threshold = Number(cards.yellowThreshold) || 2;
     box.append(sectionWithExport(
-      '黄牌榜',
+      '黄牌记录',
       el('span', {},
         '累计 ',
         canSetThreshold
@@ -109,7 +109,7 @@ export async function renderLeaderboards(container, event) {
           : el('b', {}, `${threshold} 张`),
         '黄牌停赛一场',
         canSetThreshold ? '（点击数字可修改）' : ''),
-      `${event.name}-黄牌榜`,
+      `${event.name}-黄牌记录`,
       ['球队', '球员', '号码', '总黄牌数', '累计黄牌数', '状态', '备注'],
       cards.yellows.map((r) => [r.teamName, r.player, r.playerNo || '',
         r.totalYellows, r.currentYellows, r.statusLabel || '', r.note || '']),

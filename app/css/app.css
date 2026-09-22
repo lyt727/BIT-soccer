@@ -524,3 +524,21 @@ td:last-child, th:last-child { padding-right: 14px; }
 @media (prefers-reduced-motion: reduce) {
   * { transition-duration: .001ms !important; animation-duration: .001ms !important; }
 }
+
+/* 手机端：列表项改为上下两行。
+   原来的「左边文字 + 右边一排按钮」在窄屏会把正文挤成一列汉字，
+   改成正文在上、操作按钮另起一行右对齐，观感与可读性都更好。 */
+@media (max-width: 719px) {
+  .list-item {
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: 8px;
+  }
+  .list-item .main { width: 100%; }
+  .list-item > .row {
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 6px;
+  }
+}
