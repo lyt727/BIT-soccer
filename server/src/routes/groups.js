@@ -17,6 +17,14 @@ function shuffle(list) {
 }
 
 // 单循环轮转法（Berger 表）：n 支球队生成 n-1 轮（奇数补一支轮空）
+// 淘汰赛首轮轮次：按参赛队数推断
+function autoKnockoutRound(teamCount) {
+  if (teamCount >= 16) return '1/8决赛';
+  if (teamCount >= 8) return '1/4决赛';
+  if (teamCount >= 4) return '半决赛';
+  return '决赛';
+}
+
 function roundRobin(teams) {
   const arr = [...teams];
   if (arr.length % 2 === 1) arr.push(null); // 轮空
@@ -83,9 +91,44 @@ export function registerGroupRoutes(router) {
     }
     const body = await readJson(req);
 
-    // 纯淘汰赛没有抽签
+    // 纯淘汰赛：抽签决定首轮对手（随机配对，奇数球队时最后一支轮空）
     if (event.format === 'knockout') {
-      throw badRequest('当前赛事为纯淘汰赛赛制，对阵在赛程安排里手动添加');
+      const total = await db.get(
+        'SELECT COUNT(*) AS n FROM matches WHERE event_id = ?', [event.id],
+      );
+      if (total.n > 0) {
+        if (!body.replace) throw badRequest('该赛事已有赛程，如需重新抽签请先删除现有比赛');
+        const finished = await db.get(
+          "SELECT COUNT(*) AS n FROM matches WHERE event_id = ? AND status = 'finished'",
+          [event.id],
+        );
+        if (finished.n > 0) throw badRequest('已有比赛录入结果，不能重新抽签');
+        await db.run('DELETE FROM matches WHERE event_id = ?', [event.id]);
+      }
+      const pool = shuffle(approved);
+      const roundName = String(body.roundName || '').trim().slice(0, 20)
+        || autoKnockoutRound(pool.length);
+      let byeTeam = null;
+      if (pool.length % 2 === 1) byeTeam = pool.pop(); // 奇数球队：最后一支轮空
+      let created = 0;
+      for (let i = 0; i < pool.length; i += 2) {
+        await db.run(
+          `INSERT INTO matches
+            (id, event_id, team_a_id, team_b_id, stage, group_name, knockout_round, round_name,
+             match_date, start_time, venue, status, created_by, created_at)
+           VALUES (?, ?, ?, ?, 'knockout', '', ?, '', '', '', '', 'scheduled', ?, ?)`,
+          [uid('mt_'), event.id, pool[i].id, pool[i + 1].id, roundName, user.id, nowIso()],
+        );
+        created += 1;
+      }
+      await audit(db, user, 'knockout.draw', 'event', event.id,
+        { teams: approved.length, round: roundName, matches: created }, clientIp(req));
+      sendJson(res, 200, {
+        message: `淘汰赛抽签完成：${approved.length} 支球队，${roundName}共 ${created} 场`
+          + (byeTeam ? `，${byeTeam.team_name} 轮空` : ''),
+        roundName, matchCount: created, byeTeam: byeTeam ? byeTeam.team_name : '',
+      });
+      return;
     }
 
     // 单循环联赛：抽签生成全部对阵并分配到各轮

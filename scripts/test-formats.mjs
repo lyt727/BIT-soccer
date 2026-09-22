@@ -124,8 +124,17 @@ ok('已有赛程时拒绝修改赛制', changeFormat.status === 400, changeForma
 console.log('\n【二、纯淘汰赛】');
 const ko = await setupEvent('纯淘汰赛', 'knockout', 4);
 ok('创建赛事时保存赛制为 knockout', ko.created.data?.format === 'knockout');
-const koDraw = await call('POST', `/api/events/${ko.id}/draw`, { token: adminToken, body: {} });
-ok('纯淘汰赛没有抽签（提示手动添加对阵）', koDraw.status === 400, koDraw.data?.error);
+// 纯淘汰赛也能抽签：随机配对生成首轮对阵（奇数球队时一支轮空）
+const ko2 = await setupEvent('淘汰赛抽签', 'knockout', 5);
+const ko2Draw = await call('POST', `/api/events/${ko2.id}/draw`, { token: adminToken, body: {} });
+ok('纯淘汰赛可抽签生成首轮对阵',
+  ko2Draw.status === 200 && ko2Draw.data?.matchCount === 2,
+  ko2Draw.data?.message || ko2Draw.data?.error);
+ok('奇数球队时有一支轮空', Boolean(ko2Draw.data?.byeTeam), `轮空：${ko2Draw.data?.byeTeam}`);
+const ko2Matches = (await call('GET', `/api/events/${ko2.id}/matches`, { token: adminToken })).data;
+ok('抽签生成的是淘汰赛场次且带轮次',
+  ko2Matches.length === 2
+  && ko2Matches.every((m) => m.stage === 'knockout' && m.knockoutRound === '半决赛'));
 
 const koTeams = (await call('GET', `/api/events/${ko.id}/registrations`, { token: adminToken })).data;
 const semi = await call('POST', `/api/events/${ko.id}/matches`, {

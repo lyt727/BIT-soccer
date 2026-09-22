@@ -71,6 +71,7 @@ export async function renderEvent(container, params) {
   const tabsDef = [['registrations', '球队报名']];
   if (format === 'league') tabsDef.push(['groups', '抽签编排']);
   else if (format === 'group_knockout') tabsDef.push(['groups', '抽签分组']);
+  else if (format === 'knockout') tabsDef.push(['groups', '抽签对阵']);
   tabsDef.push(
     ['schedule', '赛程安排'],
     ['stats', '数据统计'],
