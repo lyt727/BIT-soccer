@@ -42,10 +42,9 @@ export async function renderLeaderboards(container, event) {
   clear(container);
   const reload = () => renderLeaderboards(container, event);
   try {
-    const [groupStandings, scorers, matches, cards] = await Promise.all([
+    const [groupStandings, scorers, cards] = await Promise.all([
       api(`/events/${event.id}/standings-by-group`),
       api(`/events/${event.id}/scorers`),
-      api(`/events/${event.id}/matches`),
       api(`/events/${event.id}/card-stats`),
     ]);
     container.append(el('div', { class: 'section-title' },
@@ -74,7 +73,7 @@ export async function renderLeaderboards(container, event) {
       cards.reds.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
         r.redCards, r.statusLabel || '']),
     ));
-    container.append(redCardsTable(cards.reds));
+    container.append(redCardsTable(cards.reds, event, reload));
     const canSetThreshold = hasPerm(session.user, 'event.status.update');
     const threshold = Number(cards.yellowThreshold) || 2;
     container.append(sectionWithExport(
@@ -103,26 +102,6 @@ export async function renderLeaderboards(container, event) {
     if (hasPerm(session.user, 'suspension.manage')) {
       container.append(suspensionPanel(event, cards.suspensions, reload));
     }
-    const knockout = matches
-      .filter((m) => m.stage === 'knockout')
-      .sort((a, b) => {
-        const order = { '1/8决赛': 1, '1/4决赛': 2, 半决赛: 3, 决赛: 4 };
-        return (order[a.knockoutRound] || 9) - (order[b.knockoutRound] || 9)
-          || String(a.date).localeCompare(String(b.date));
-      });
-    container.append(sectionWithExport(
-      '淘汰赛赛果', '单回合淘汰赛，手动录入对阵与比分', `${event.name}-淘汰赛赛果`,
-      ['轮次', '主队', '客队', '比分', '状态', '日期'],
-      knockout.map((m) => [
-        m.knockoutRound || '',
-        m.teamA?.name || '',
-        m.teamB?.name || '',
-        m.status === 'finished' ? `${m.scoreA}:${m.scoreB}` : '未开赛',
-        m.status === 'finished' ? '已完赛' : '未开赛',
-        m.date,
-      ]),
-    ));
-    container.append(knockout.length ? knockoutTable(knockout) : empty('暂无淘汰赛', '🏆'));
   } catch (err) {
     container.append(empty(err.message, '⚠️'));
   }
@@ -185,19 +164,21 @@ function cardStatusCell(row) {
   }, row.statusLabel);
 }
 
-function redCardsTable(rows) {
+function redCardsTable(rows, event, reload) {
   if (!rows.length) return empty('暂无红牌记录', '🟥');
+  const canSet = hasPerm(session.user, 'suspension.manage');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
-      el('th', {}, '排名'), el('th', {}, '号码'), el('th', {}, '球员'),
+      el('th', {}, '号码'), el('th', {}, '球员'),
       el('th', {}, '球队'), el('th', { class: 'num' }, '红牌'), el('th', {}, '状态'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
-      el('td', { class: 'num' }, r.rank),
       el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', {}, r.teamName),
       el('td', { class: 'num', style: { fontWeight: '700', color: '#c62828' } }, r.redCards),
-      el('td', {}, cardStatusCell(r))))));
+      el('td', {}, canSet
+        ? redStatusToggle(r, event, reload)
+        : cardStatusCell({ status: r.status, statusLabel: r.statusLabel }))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
@@ -205,11 +186,10 @@ function yellowCardsTable(rows) {
   if (!rows.length) return empty('暂无黄牌记录', '🟨');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
-      el('th', {}, '排名'), el('th', {}, '号码'), el('th', {}, '球员'), el('th', {}, '球队'),
+      el('th', {}, '号码'), el('th', {}, '球员'), el('th', {}, '球队'),
       el('th', { class: 'num' }, '总黄牌'), el('th', { class: 'num' }, '累计黄牌'),
       el('th', {}, '状态'))),
     el('tbody', {}, rows.map((r) => el('tr', {},
-      el('td', { class: 'num' }, r.rank),
       el('td', { class: 'num' }, r.playerNo || '—'),
       el('td', { style: { fontWeight: '500' } }, r.player),
       el('td', {}, r.teamName),
@@ -217,6 +197,44 @@ function yellowCardsTable(rows) {
       el('td', { class: 'num', style: { fontWeight: '700', color: '#e08a00' } }, r.currentYellows),
       el('td', {}, cardStatusCell(r))))));
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
+}
+
+// 红牌状态二选一：下一轮停赛 / 已执行停赛（管理员点击切换）
+function redStatusToggle(row, event, reload) {
+  const current = row.status === 'served' ? 'served' : 'pending';
+  const make = (value, label, color) => el('button', {
+    type: 'button',
+    style: {
+      border: 'none', borderRadius: '10px', padding: '2px 8px', fontSize: '12px',
+      cursor: 'pointer', marginRight: '4px', whiteSpace: 'nowrap',
+      background: current === value ? color : '#eef0ef',
+      color: current === value ? '#fff' : '#8a8f8c',
+      fontWeight: current === value ? '700' : '400',
+    },
+    onClick: async () => {
+      if (current === value) return;
+      if (!await confirmBox(value === 'served'
+        ? `把「${row.player}」标记为已执行停赛？`
+        : `把「${row.player}」改回下一轮停赛？`)) return;
+      try {
+        await api(`/events/${event.id}/suspensions/status`, {
+          method: 'POST',
+          body: {
+            registrationId: row.registrationId,
+            player: row.player,
+            playerNo: row.playerNo,
+            reason: 'red_card',
+            status: value,
+          },
+        });
+        toast(value === 'served' ? '已标记为已执行停赛' : '已标记为下一轮停赛', 'success');
+        reload();
+      } catch (err) { toast(err.message, 'error'); }
+    },
+  }, label);
+  return el('div', { style: { whiteSpace: 'nowrap' } },
+    make('pending', '下一轮停赛', '#c62828'),
+    make('served', '已执行停赛', '#0b7a43'));
 }
 
 function suspensionPanel(event, suspensions, reload) {

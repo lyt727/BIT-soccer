@@ -258,6 +258,10 @@ check('球员可读红黄牌榜', cardStats.status === 200
   && cardStats.data?.reds?.length >= 1 && cardStats.data?.yellows?.length >= 1,
   `红牌 ${cardStats.data?.reds?.length} 黄牌 ${cardStats.data?.yellows?.length}`);
 check('红牌榜含停赛状态', cardStats.data?.reds?.some((r) => r.status === 'pending'));
+check('红牌榜状态不存在空白（二选一）',
+  cardStats.data?.reds?.every((r) => r.statusLabel === '下一轮停赛' || r.statusLabel === '已执行停赛'),
+  `状态：${[...new Set((cardStats.data?.reds || []).map((r) => r.statusLabel))].join('/')}`);
+check('红牌榜只含有红牌的球员', cardStats.data?.reds?.every((r) => r.redCards > 0));
 const servedRow = cardStats.data?.yellows?.find((y) => y.status === 'served');
 check('累计黄牌按清零值扣减', Boolean(servedRow)
   && servedRow.currentYellows < servedRow.totalYellows,
@@ -314,6 +318,34 @@ await call('PATCH', '/api/events/evt_demo1',
 check('多张牌演示数据（至少一人累计 2 张以上）',
   cardStats.data?.yellows?.some((y) => y.totalYellows >= 2)
   && cardStats.data?.reds?.some((r) => r.redCards >= 2));
+
+// 红牌状态二选一（按球员直接设置）
+const redRow = cardStats.data.reds[0];
+const setServed = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: redRow.registrationId, player: redRow.player,
+    playerNo: redRow.playerNo, reason: 'red_card', status: 'served',
+  },
+});
+check('管理员可把红牌状态改为已执行停赛', setServed.status === 200);
+const redAfter = (await call('GET', '/api/events/evt_demo1/card-stats', { token: adminToken }))
+  .data.reds.find((r) => r.player === redRow.player);
+check('改后红牌状态为已执行停赛', redAfter?.status === 'served'
+  && redAfter?.statusLabel === '已执行停赛');
+const setBack = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: adminToken,
+  body: {
+    registrationId: redRow.registrationId, player: redRow.player,
+    playerNo: redRow.playerNo, reason: 'red_card', status: 'pending',
+  },
+});
+check('管理员可改回下一轮停赛', setBack.status === 200);
+const statusDenied = await call('POST', '/api/events/evt_demo1/suspensions/status', {
+  token: opToken,
+  body: { registrationId: redRow.registrationId, player: redRow.player, reason: 'red_card', status: 'served' },
+});
+check('数据录入员改红牌状态被拒绝(403)', statusDenied.status === 403);
 
 const result = await call('POST', '/api/matches/mt_evt1_gA3/result', {
   token: opToken,

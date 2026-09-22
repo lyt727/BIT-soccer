@@ -310,6 +310,34 @@ export function seedIfEmpty(db) {
         acc.player.name, acc.player.jerseyNo, 'yellow_accumulation',
         '累计 2 张黄牌，下一轮停赛（演示数据）', 'pending', 0, now);
     }
+    // 一名红牌球员标为「已执行停赛」，用于演示两种状态
+    const doneRed = demoCards[1];
+    insertSusp.run('sus_demo_red_served', doneRed.regId, rosterByReg[doneRed.regId].teamName,
+      doneRed.red.name, doneRed.red.jerseyNo, 'red_card',
+      '红牌停赛一轮已执行（演示数据）', 'served', 0, now);
+    // 其余红牌球员各补一条「下一轮停赛」，保证红牌榜状态不空
+    const redRows = db.all(
+      `SELECT DISTINCT c.team, c.player, c.player_no
+         FROM match_cards c JOIN matches m ON m.id = c.match_id
+        WHERE m.event_id = 'evt_demo1' AND c.card_type = 'red'`);
+    let redSeq = 0;
+    for (const row of redRows) {
+      const reg = db.get(
+        'SELECT id, team_name FROM registrations WHERE event_id = ? AND team_name = ?',
+        ['evt_demo1', row.team],
+      );
+      if (!reg) continue;
+      const exists = db.get(
+        `SELECT id FROM player_suspensions
+          WHERE event_id = 'evt_demo1' AND registration_id = ? AND player = ? AND reason = 'red_card'`,
+        [reg.id, row.player],
+      );
+      if (exists) continue;
+      redSeq += 1;
+      insertSusp.run(`sus_red_${redSeq}`, reg.id, reg.team_name, row.player,
+        row.player_no || null, 'red_card',
+        '红牌自动登记，下一轮停赛（演示数据）', 'pending', 0, now);
+    }
   }
 
   // 淘汰赛（单回合、手动对阵）：两场半决赛 + 一场决赛

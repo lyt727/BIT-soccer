@@ -437,6 +437,33 @@ export function registerMatchRoutes(router) {
             String(c.time || '').trim() || null],
         );
       }
+      // 红牌至少停赛一轮：自动登记一条「下一轮停赛」，避免红牌榜状态空着。
+      // 该球员若已有待执行记录则跳过；已执行过的旧记录不影响新停赛。
+      for (const c of cards.filter((x) => x.type === 'red')) {
+        const cardTeam = String(c.team || '').trim();
+        const cardPlayer = String(c.player).trim();
+        if (!cardTeam || !cardPlayer) continue;
+        const reg = await db.get(
+          'SELECT id, team_name FROM registrations WHERE event_id = ? AND team_name = ?',
+          [match.event_id, cardTeam],
+        );
+        if (!reg) continue;
+        const pending = await db.get(
+          `SELECT id FROM player_suspensions
+            WHERE event_id = ? AND registration_id = ? AND player = ?
+              AND reason = 'red_card' AND status = 'pending'`,
+          [match.event_id, reg.id, cardPlayer],
+        );
+        if (pending) continue;
+        await db.run(
+          `INSERT INTO player_suspensions
+             (id, event_id, registration_id, team_name, player, player_no, reason, note,
+              status, cleared_yellow, created_by, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, 'red_card', ?, 'pending', 0, ?, ?)`,
+          [uid('sus_'), match.event_id, reg.id, reg.team_name, cardPlayer,
+            String(c.no ?? '').trim() || null, '红牌自动登记，下一轮停赛', user.id, nowIso()],
+        );
+      }
       await db.run(
         `UPDATE matches
             SET score_a = ?, score_b = ?, referee_list = ?, referee = ?, assistant1 = ?,

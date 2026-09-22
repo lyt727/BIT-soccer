@@ -122,7 +122,7 @@ export function parseJsonArray(text, fallback = []) {
 //   累计黄牌数：总黄牌数 - 该球员所有“已完成停赛”记录的清零值
 //   状态：全部由管理员在停赛台账里人工维护，系统不做任何规则判断
 const REASON_LABEL = { red_card: '红牌', yellow_accumulation: '累计黄牌' };
-const STATUS_LABEL = { pending: '下一轮停赛', served: '已完成停赛', void: '已失效' };
+const STATUS_LABEL = { pending: '下一轮停赛', served: '已执行停赛', void: '已失效' };
 
 export function computeCardStats(db, eventId, yellowThreshold = 2) {
   const cards = db.all(
@@ -152,6 +152,16 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
     if (mine.some((s) => s.status === 'served')) return 'served';
     return '';
   };
+  // 红牌至少停赛一轮，所以有红牌但没记录时按「下一轮停赛」呈现；只有失效记录时显示失效
+  const redStatusOf = (key, hasRedCard) => {
+    const s = pendingOrServed(key, 'red_card');
+    if (s) return s;
+    const mine = (suspMap.get(key) || []).filter((x) => x.reason === 'red_card');
+    if (mine.length) return 'void';
+    return hasRedCard ? 'pending' : '';
+  };
+  const hasReasonRecord = (key, reason) =>
+    (suspMap.get(key) || []).some((s) => s.reason === reason);
   const clearedYellows = (key) => (suspMap.get(key) || [])
     .filter((s) => s.status === 'served')
     .reduce((n, s) => n + Number(s.cleared_yellow || 0), 0);
@@ -180,10 +190,11 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
   }
 
   const rows = [...map.entries()].map(([key, item]) => {
-    const redStatus = pendingOrServed(key, 'red_card');
+    const redStatus = redStatusOf(key, item.redCards > 0);
     const yellowStatus = pendingOrServed(key, 'yellow_accumulation');
     return {
       ...item,
+      hasRedRecord: hasReasonRecord(key, 'red_card'),
       currentYellows: Math.max(0, item.totalYellows - clearedYellows(key)),
       redStatus,
       redStatusLabel: STATUS_LABEL[redStatus] || '',
@@ -195,12 +206,13 @@ export function computeCardStats(db, eventId, yellowThreshold = 2) {
   const byName = (a, b) => a.teamName.localeCompare(b.teamName, 'zh-Hans-CN')
     || a.player.localeCompare(b.player, 'zh-Hans-CN');
 
-  const reds = rows.filter((r) => r.redCards > 0 || r.redStatus)
+  const reds = rows.filter((r) => r.redCards > 0 || r.hasRedRecord)
     .sort((a, b) => b.redCards - a.redCards || byName(a, b))
     .map((r, i) => ({
       rank: i + 1,
       player: r.player,
       playerNo: r.playerNo,
+      registrationId: r.registrationId,
       teamName: r.teamName,
       redCards: r.redCards,
       status: r.redStatus,

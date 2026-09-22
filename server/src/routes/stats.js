@@ -160,6 +160,63 @@ export function registerStatsRoutes(router) {
     sendJson(res, 201, { id, message: '已登记停赛（下一轮停赛）' });
   });
 
+  // 按球员直接设置停赛状态（榜上二选一用：下一轮停赛 / 已执行停赛）
+  router.add('POST', '/api/events/:id/suspensions/status', async (req, res, params) => {
+    const user = await authUser(req);
+    requireAction(user, 'suspension.manage');
+    const db = getDb();
+    const event = await loadEvent(db, params.id);
+    const body = await readJson(req);
+    const reason = String(body.reason || 'red_card');
+    if (!REASONS.includes(reason)) throw badRequest('停赛类型不合法');
+    const status = String(body.status || '');
+    if (!SUSP_STATUS.includes(status)) throw badRequest('停赛状态不合法');
+    const player = String(body.player || '').trim();
+    if (!player) throw badRequest('请选择球员');
+    const registrationId = String(body.registrationId || '').trim();
+    if (!registrationId) throw badRequest('请选择球队');
+    const reg = await db.get(
+      'SELECT id, team_name FROM registrations WHERE id = ? AND event_id = ?',
+      [registrationId, event.id],
+    );
+    if (!reg) throw badRequest('球队不存在');
+
+    const existing = await db.get(
+      `SELECT * FROM player_suspensions
+        WHERE event_id = ? AND registration_id = ? AND player = ? AND reason = ?
+        ORDER BY created_at DESC LIMIT 1`,
+      [event.id, registrationId, player, reason],
+    );
+    let cleared = 0;
+    if (status === 'served') {
+      cleared = await currentYellows(db, event.id, registrationId, player, existing?.id || null);
+    }
+    if (existing) {
+      await db.run(
+        `UPDATE player_suspensions SET status = ?, cleared_yellow = ?, player_no = COALESCE(?, player_no),
+           updated_at = ? WHERE id = ?`,
+        [status, cleared, String(body.playerNo || '').trim() || null, nowIso(), existing.id],
+      );
+    } else {
+      await db.run(
+        `INSERT INTO player_suspensions
+           (id, event_id, registration_id, team_name, player, player_no, reason, note,
+            status, cleared_yellow, created_by, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [uid('sus_'), event.id, registrationId, reg.team_name, player,
+          String(body.playerNo || '').trim() || null, reason,
+          String(body.note || '').trim() || null, status, cleared, user.id, nowIso()],
+      );
+    }
+    await audit(db, user, 'suspension.set_status', 'player_suspension',
+      existing?.id || `${registrationId}:${player}`, { player, reason, status }, clientIp(req));
+    sendJson(res, 200, {
+      message: status === 'served' ? '已标记为已执行停赛' : '已标记为下一轮停赛',
+      status,
+      clearedYellow: cleared,
+    });
+  });
+
   // 更新停赛：标记“已完成停赛”时会写入清零值，实现累计黄牌归零
   router.add('PATCH', '/api/suspensions/:sid', async (req, res, params) => {
     const user = await authUser(req);
