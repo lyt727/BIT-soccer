@@ -68,7 +68,7 @@ export async function renderLeaderboards(container, event) {
     container.append(scorersTable(scorers));
 
     container.append(sectionWithExport(
-      '红牌榜', '红牌自动停赛一轮，状态由管理员在停赛台账里维护', `${event.name}-红牌榜`,
+      '红牌榜', '红牌停赛一轮，停赛状态由管理员维护', `${event.name}-红牌榜`,
       ['排名', '号码', '球员', '球队', '红牌数', '状态'],
       cards.reds.map((r) => [r.rank, r.playerNo || '', r.player, r.teamName,
         r.redCards, r.statusLabel || '']),
