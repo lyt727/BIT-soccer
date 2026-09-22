@@ -15,7 +15,7 @@ function cell(value) {
   return `<Cell><Data ss:Type="String">${esc(value)}</Data></Cell>`;
 }
 
-export function exportExcel(filename, sheetName, headers, rows) {
+export async function exportExcel(filename, sheetName, headers, rows) {
   const safeSheet = String(sheetName || 'Sheet1').replace(/[\\/?*[\]:]/g, '-').slice(0, 28);
   const headerXml = `<Row>${headers.map((h) => cell(h)).join('')}</Row>`;
   const bodyXml = rows.map((row) => `<Row>${row.map(cell).join('')}</Row>`).join('');
@@ -39,12 +39,29 @@ export function exportExcel(filename, sheetName, headers, rows) {
  </Worksheet>
 </Workbook>`;
   const blob = new Blob(['\ufeff', xml], { type: 'application/vnd.ms-excel;charset=utf-8' });
+  const name = `${filename}.xls`;
+
+  // 手机端优先走系统分享：可存到「文件」App 或直接发微信，比 blob 下载可靠得多
+  // （微信内置浏览器会拦截 blob 下载，桌面浏览器则没有这个限制）
+  try {
+    const file = typeof File !== 'undefined' ? new File([blob], name, { type: blob.type }) : null;
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: name });
+      return;
+    }
+  } catch (err) {
+    // 用户主动取消分享时直接结束，其它异常继续走下载兜底
+    if (err && err.name === 'AbortError') return;
+  }
+
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `${filename}.xls`;
+  a.download = name;
+  a.rel = 'noopener';
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
+  // 手机端下载启动慢，回收太早会导致"文件还没下就被撤销"
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
 }
