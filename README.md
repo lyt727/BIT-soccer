@@ -132,7 +132,7 @@ node scripts/reset-demo.mjs   # 重置演示数据
 
 | 文档 | 内容 |
 |---|---|
-| 绿茵BIT · 产品需求文档（PRD）.md | 精简版 PRD V3.0 |
+| 绿茵BIT · 产品需求文档（PRD）.md | PRD V3 |
 | [权限设计](docs/权限设计说明.md) | 角色矩阵、两级授权、演示账号 |
 | [AI 识图技术方案](docs/AI识图技术方案.md) | 识别流程、置信度、Provider 接入 |
 | [云数据库方案](docs/云数据库方案.md) | PostgreSQL DDL、RLS、上线步骤 |
