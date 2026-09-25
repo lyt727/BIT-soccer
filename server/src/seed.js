@@ -444,11 +444,19 @@ export function seedIfEmpty(db) {
         finished ? 'finished' : 'scheduled', scoreA, scoreB,
         finished ? 'usr_admin' : null, finished ? now : null, now,
       );
-      if (finished && scoreA > 0) {
-        const scorer = rosterByReg[aId].roster
-          .find((m) => (m.roles || []).includes('player'));
-        if (scorer) {
-          insertWGoal.run(`g_w_${wSeq}`, mid, 'A', scorer.name, scorer.jerseyNo, "23'");
+      // 进球记录必须与比分一一对应，否则榜单和比分对不上
+      if (finished) {
+        const scorersOf = (rid) => rosterByReg[rid].roster
+          .filter((m) => (m.roles || []).includes('player'));
+        const aScorers = scorersOf(aId);
+        const bScorers = scorersOf(bId);
+        for (let i = 0; i < scoreA && aScorers.length; i += 1) {
+          const p = aScorers[i % aScorers.length];
+          insertWGoal.run(`g_w_${wSeq}_a${i}`, mid, 'A', p.name, p.jerseyNo, `${11 + i * 12}'`);
+        }
+        for (let i = 0; i < scoreB && bScorers.length; i += 1) {
+          const p = bScorers[i % bScorers.length];
+          insertWGoal.run(`g_w_${wSeq}_b${i}`, mid, 'B', p.name, p.jerseyNo, `${38 + i * 12}'`);
         }
       }
     });

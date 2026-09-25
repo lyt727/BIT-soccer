@@ -78,7 +78,7 @@ export async function renderLeaderboards(container, event) {
     }
     box.append(sectionWithExport(
       '射手榜', '', `${event.name}-射手榜`,
-      ['排名', '球员', '球队', '总进球', '点球进球'],
+      ['排名', '球员', '球队', '总进球', '点球'],
       scorers.map((r) => [r.rank, r.player, r.teamName, r.goals, r.penalties]),
     ));
     box.append(scorersTable(scorers));
@@ -551,7 +551,9 @@ function scorersTable(rows) {
   if (!rows.length) return empty('暂无进球记录', '⚽');
   const table = el('table', {},
     el('thead', {}, el('tr', {},
-      ['排名', '球员', '球队', '总进球', '其中点球'].map((h) => el('th', { class: h === '总进球' ? 'num' : '' }, h)))),
+    ['排名', '球员', '球队', '总进球', '点球'].map((h) => el('th', {
+      class: (h === '总进球' || h === '点球') ? 'num' : '',
+    }, h)))),
     el('tbody', {}, rows.map((r) => el('tr', {},
       el('td', { class: r.rank === 1 ? 'rank-top' : '' }, r.rank),
       el('td', { style: { fontWeight: '500' } }, r.player),
