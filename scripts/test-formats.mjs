@@ -287,13 +287,17 @@ console.log('\n【五、赛事状态与比赛增改】');
     { token: adminToken, body: { venue: '西操场 1 号场' } });
   ok('进行中状态可以编辑比赛信息', liveEdit.status === 200, liveEdit.data?.error || '');
 
-  // 已结束：管理员与数据录入员都仍可编辑
+  // 已结束：比赛数据锁定，只有管理员还能改
   await call('PATCH', '/api/events/evt_demo1/status',
     { token: adminToken, body: { status: 'ended' } });
   const endedEditOp = await call('PATCH', `/api/matches/${liveMatch.id}`,
     { token: opTok, body: { venue: '西操场 2 号场' } });
-  ok('已结束状态数据录入员仍可编辑比赛信息',
-    endedEditOp.status === 200, endedEditOp.data?.error || '');
+  ok('已结束状态数据录入员不能再改比赛',
+    endedEditOp.status === 400, endedEditOp.data?.error || '');
+  const endedEditAdmin = await call('PATCH', `/api/matches/${liveMatch.id}`,
+    { token: adminToken, body: { venue: '西操场 2 号场' } });
+  ok('已结束状态管理员仍可编辑比赛信息',
+    endedEditAdmin.status === 200, endedEditAdmin.data?.error || '');
   const endedAdd = await call('POST', '/api/events/evt_demo1/matches', {
     token: adminToken,
     body: { stage: 'group', groupName: 'A', teamAId: 'reg_e1_1', teamBId: 'reg_e1_2' },

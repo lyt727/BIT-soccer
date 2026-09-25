@@ -3,6 +3,7 @@ import {
   el, clear, toast, btn, empty, confirmBox, openModal, badge, statusBadge, reloadKeepingScroll,
 } from '../lib/ui.js';
 import { openAiFlow } from './stats.js';
+import { openMatchEditor } from './match-editor.js';
 import { exportExcel } from '../lib/export.js';
 
 export async function renderSchedule(container, event) {
@@ -76,8 +77,10 @@ function matchCard(m, isAdmin, event, matches, canAi) {
     if (m.summary.redCards) summary.push(badge(`红牌 ${m.summary.redCards}`, 'rejected'));
     if (m.summary.substitutions) summary.push(badge(`换人 ${m.summary.substitutions}`, 'pending'));
   }
-  // 比赛信息编辑：管理员与数据录入员都可以，参赛队员只读
-  const canManage = hasPerm(session.user, 'result.record') && Boolean(event.staffRole);
+  // 比赛信息编辑：管理员与数据录入员都可以，参赛队员只读；
+  // 赛事结束后比赛数据锁定，只有管理员还能改（与后端校验一致）
+  const endedLocked = event.status === 'ended' && session.user?.role !== 'admin';
+  const canManage = hasPerm(session.user, 'result.record') && Boolean(event.staffRole) && !endedLocked;
   const actions = canManage ? el('div', { class: 'row' },
     btn('编辑', {
       cls: 'sm', type: 'outline', onClick: () => editMatchFlow(event, m),
@@ -113,14 +116,16 @@ function matchCard(m, isAdmin, event, matches, canAi) {
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
         }) : null,
-    canAi ? btn('✎ 特殊情况说明', {
+        // 特殊情况说明的快捷入口（内容同样在「编辑」统一界面里可改）
+        canManage ? btn('✎ 特殊情况说明', {
           type: 'outline', cls: 'sm', onClick: () => editNoteModal(m),
         }) : null),
     ),
     actions);
 }
 
-function openMatchStats(m, event, canEdit = false) {
+// 「技术统计与时间轴」只做展示：编辑统一走每场比赛的「编辑」按钮
+function openMatchStats(m, event) {
   const A = m.teamA.name;
   const B = m.teamB.name;
   const lineupBlock = (teamName, lineup) => el('div', { class: 'card', style: { flex: '1', margin: 0 } },
@@ -150,7 +155,7 @@ function openMatchStats(m, event, canEdit = false) {
     el('div', { class: 'section-title' }, '比赛时间轴（进球 / 红黄牌 / 换人）'),
     timelineBlock(m, A, B),
     el('div', { class: 'section-title' }, '比赛工作人员（裁判组之外）'),
-    staffBlock(m, canEdit),
+    staffBlock(m),
   );
   openModal({ title: `技术统计 · ${A} vs ${B}`, body, foot: [] });
 }
@@ -173,34 +178,11 @@ function staffSummary(m) {
   return parts.length ? parts.join(' · ') : '';
 }
 
-function staffBlock(m, canEdit) {
-  if (!canEdit) {
-    return el('div', { class: 'card' },
-      ...STAFF_FIELDS.map(([key, label]) => el('div', { class: 'small' },
-        `${label}：${m.matchStaff?.[key] || '未填写'}`)));
-  }
-  const inputs = {};
-  const rows = STAFF_FIELDS.map(([key, label]) => {
-    const input = el('input', {
-      value: m.matchStaff?.[key] || '',
-      placeholder: staffPlaceholder(key, label),
-    });
-    inputs[key] = input;
-    return el('label', { class: 'field' }, el('span', {}, label), input);
-  });
+// 只读展示；编辑在「编辑比赛信息」统一界面里
+function staffBlock(m) {
   return el('div', { class: 'card' },
-    ...rows,
-    btn('保存工作人员', {
-      type: 'primary', cls: 'block', onClick: async () => {
-        try {
-          const matchStaff = {};
-          for (const [key] of STAFF_FIELDS) matchStaff[key] = inputs[key].value.trim();
-          await api(`/matches/${m.id}/staff`, { method: 'PATCH', body: { matchStaff } });
-          toast('比赛工作人员已保存', 'success');
-          reloadKeepingScroll();
-        } catch (err) { toast(err.message, 'error'); }
-      },
-    }));
+    ...STAFF_FIELDS.map(([key, label]) => el('div', { class: 'small' },
+      `${label}：${m.matchStaff?.[key] || '未填写'}`)));
 }
 
 function timelineBlock(m, teamA, teamB) {
@@ -260,26 +242,8 @@ async function addMatchFlow(event, forcedStage = null) {
 }
 
 async function editMatchFlow(event, match) {
-  let teams = [];
-  try { teams = await teamOptions(event); } catch (err) { toast(err.message, 'error'); return; }
-  const modal = openModal({
-    title: '编辑比赛信息',
-    body: el('p', { class: 'small muted' },
-      '已完赛比赛可修改赛程信息，已录入比分与统计保留。'),
-  });
-  clear(modal.body);
-  modal.body.append(matchFormBody(teams, match, null, event.format || 'group_knockout'));
-  const submit = async () => {
-    try {
-      const payload = collectMatchForm(modal.body);
-      await api(`/matches/${match.id}`, { method: 'PATCH', body: payload });
-      modal.close();
-      toast('赛程信息已更新', 'success');
-      reloadKeepingScroll();
-    } catch (err) { toast(err.message, 'error'); }
-  };
-  modal.setFoot([btn('取消', { onClick: () => modal.close() }),
-    btn('保存', { type: 'primary', onClick: submit })]);
+  // 统一编辑界面：比赛信息 + 比赛数据 + 工作人员，一次提交
+  await openMatchEditor({ event, match });
 }
 
 const KO_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];

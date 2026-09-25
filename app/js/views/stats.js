@@ -1,10 +1,10 @@
 import { api, session, hasPerm } from '../lib/api.js';
 import {
-  el, clear, toast, btn, empty, openModal, badge, statBox, confirmBox,
-  reloadKeepingScroll, swapContentKeepingScroll,
+  el, clear, toast, btn, empty, openModal, badge, confirmBox, swapContentKeepingScroll,
 } from '../lib/ui.js';
 import { fileToDataUrl } from '../lib/api.js';
 import { exportExcel } from '../lib/export.js';
+import { openMatchEditor } from './match-editor.js';
 
 export async function renderStats(container, event) {
   clear(container);
@@ -21,7 +21,7 @@ export async function renderStats(container, event) {
     const actions = el('div', { class: 'row wrap', style: { marginBottom: '4px' } });
     if (canRecord && event.status !== 'ended') {
       actions.append(btn('✍ 人工录入结果', {
-        type: 'outline', cls: 'sm', onClick: () => openManualResult(event, matches),
+        type: 'outline', cls: 'sm', onClick: () => openMatchEditor({ event, matches }),
       }));
       actions.append(el('span', { class: 'badge', style: { alignSelf: 'center' } },
         'AI 识图入口：赛程安排'));
@@ -579,264 +579,9 @@ function knockoutTable(matches) {
   return el('div', { class: 'table-card' }, el('div', { class: 'table-wrap' }, table));
 }
 
-// ===================== 人工结果录入 =====================
-function openManualResult(event, matches, prefill = null) {
-  const openMatches = matches.filter((m) => m.status === 'scheduled');
-  const all = [...openMatches, ...matches.filter((m) => m.status === 'finished')];
-  const modal = openModal({
-    title: prefill ? '比赛结果（AI 已回填，请逐项复核）' : '录入比赛结果',
-    body: el('div', {}, el('p', { class: 'small muted' },
-      prefill ? '以下字段来自 AI 识别，低置信度项已标红，请修正后提交。'
-        : '进球数决定名单行数：每球一行，球员可留空（记为“未登记”）。')),
-  });
-  clear(modal.body);
-  const body = resultFormBody(event, all, prefill);
-  modal.body.append(body);
-  const submit = async () => {
-    try {
-      const payload = collectResultForm(body, prefill ? 'ai' : 'manual');
-      await api(`/matches/${payload.matchId}/result`, {
-        method: 'POST',
-        body: payload.data,
-      });
-      modal.close();
-      toast(prefill ? '识别数据已核对并提交，榜单已更新' : '比赛结果已提交，榜单已自动更新', 'success');
-      setTimeout(() => reloadKeepingScroll(), 400);
-    } catch (err) {
-      toast(err.message, 'error', 3800);
-    }
-  };
-  modal.setFoot([
-    btn('取消', { onClick: () => modal.close() }),
-    btn('提交结果', { type: 'primary', onClick: submit }),
-  ]);
-}
-
-function resultFormBody(event, all, prefill) {
-  const target = (prefill && all.find((m) =>
-    ((m.teamA.registrationId === prefill.match.registrationA?.id
-      || m.teamB.registrationId === prefill.match.registrationA?.id)
-      && (m.teamA.registrationId === prefill.match.registrationB?.id
-        || m.teamB.registrationId === prefill.match.registrationB?.id))
-      && m.status === 'scheduled'))
-    || all.find((m) => m.status === 'scheduled')
-    || all[0];
-  const sel = el('select', { id: 'rs-match' },
-    all.map((m) => el('option', {
-      value: m.id, selected: m.id === target?.id,
-    }, `${m.date} ${m.teamA.name} vs ${m.teamB.name}（${m.status === 'finished' ? '已完赛-修订' : '未开赛'}）`)));
-  const defaultScores = prefill ? [prefill.match.scoreA, prefill.match.scoreB] : [0, 0];
-  const baseLineups = prefill?.match?.lineups || {
-    A: target?.lineups?.A || null,
-    B: target?.lineups?.B || null,
-  };
-  const refs = prefill?.match?.referees || {
-    main: target?.referee || '',
-    assistant1: target?.assistant1 || '',
-    assistant2: target?.assistant2 || '',
-    fourth: target?.fourthOfficial || '',
-  };
-  const goalsA = el('div', { id: 'goals-A' });
-  const goalsB = el('div', { id: 'goals-B' });
-  const inputA = numberInput('rs-scoreA', defaultScores[0]);
-  const inputB = numberInput('rs-scoreB', defaultScores[1]);
-  inputA.addEventListener('input', () => renderGoalRows(goalsA, 'A', clamp(inputA.value), prefill?.match.goals));
-  inputB.addEventListener('input', () => renderGoalRows(goalsB, 'B', clamp(inputB.value), prefill?.match.goals));
-  const subsBox = el('div', { id: 'subs-box' });
-  const cardsBox = el('div', { id: 'cards-box' });
-  if (prefill) {
-    renderGoalRows(goalsA, 'A', prefill.match.scoreA, prefill.match.goals);
-    renderGoalRows(goalsB, 'B', prefill.match.scoreB, prefill.match.goals);
-    (prefill.match.substitutions || []).forEach((s) => addSubRow(subsBox, s));
-    (prefill.match.cards || []).forEach((c) => addCardRow(cardsBox, c));
-  } else {
-    renderGoalRows(goalsA, 'A', 0);
-    renderGoalRows(goalsB, 'B', 0);
-  }
-  return el('div', {},
-    field('选择比赛', sel),
-    el('div', { class: 'score-inputs' },
-      el('div', {}, label('主队进球'), inputA),
-      el('span', { class: 'vs' }, 'VS'),
-      el('div', {}, label('客队进球'), inputB)),
-    el('div', { class: 'section-title' }, '比赛服颜色与首发/替补名单（裁判报告自动填入，可修改）'),
-    el('div', { class: 'grid cols-2', style: { gap: '8px' } },
-      el('label', { class: 'field' },
-        el('span', {}, '主队比赛服颜色'),
-        el('input', { id: 'rs-colorA', value: baseLineups?.A?.color || prefill?.match?.kitColorA || '', placeholder: '如：红白' })),
-      el('label', { class: 'field' },
-        el('span', {}, '客队比赛服颜色'),
-        el('input', { id: 'rs-colorB', value: baseLineups?.B?.color || prefill?.match?.kitColorB || '', placeholder: '如：蓝黑' }))),
-    el('div', { class: 'grid cols-2', style: { gap: '8px' } },
-      el('label', { class: 'field' },
-        el('span', {}, '主队首发（号码 姓名，每行一人）'),
-        el('textarea', { id: 'rs-lineupA-start', rows: 6 }, lineupToText(baseLineups?.A))),
-      el('label', { class: 'field' },
-        el('span', {}, '主队替补'),
-        el('textarea', { id: 'rs-lineupA-bench', rows: 3 }, lineupToText({ starting: baseLineups?.A?.substitutes || [] }))),
-      el('label', { class: 'field' },
-        el('span', {}, '客队首发'),
-        el('textarea', { id: 'rs-lineupB-start', rows: 6 }, lineupToText(baseLineups?.B))),
-      el('label', { class: 'field' },
-        el('span', {}, '客队替补'),
-        el('textarea', { id: 'rs-lineupB-bench', rows: 3 }, lineupToText({ starting: baseLineups?.B?.substitutes || [] })))),
-    el('div', { class: 'section-title' }, '主队进球球员'),
-    goalsA,
-    el('div', { class: 'section-title' }, '客队进球球员'),
-    goalsB,
-    el('div', { class: 'section-title' }, '裁判组（主裁判 / 一助 / 二助 / 第四官员）'),
-    el('div', { class: 'grid cols-2', style: { gap: '8px' } },
-      el('label', { class: 'field' },
-        el('span', { class: 'required' }, '主裁判'),
-        el('input', { id: 'rs-referee-main', value: refs.main || '', placeholder: '主裁判姓名' })),
-      el('label', { class: 'field' },
-        el('span', {}, '第一助理裁判'),
-        el('input', { id: 'rs-referee-a1', value: refs.assistant1 || '', placeholder: '第一助理' })),
-      el('label', { class: 'field' },
-        el('span', {}, '第二助理裁判'),
-        el('input', { id: 'rs-referee-a2', value: refs.assistant2 || '', placeholder: '第二助理' })),
-      el('label', { class: 'field' },
-        el('span', {}, '第四官员'),
-        el('input', { id: 'rs-referee-fourth', value: refs.fourth || '', placeholder: '第四官员' }))),
-    el('div', { class: 'row between mt12' },
-      el('div', { class: 'section-title', style: { margin: 0 } }, '换人记录（选填）'),
-      el('button', { class: 'btn sm outline', type: 'button', onclick: () => addSubRow(subsBox) }, '＋ 添加')),
-    subsBox,
-    el('div', { class: 'row between mt12' },
-      el('div', { class: 'section-title', style: { margin: 0 } }, '红黄牌记录（选填）'),
-      el('button', { class: 'btn sm outline', type: 'button', onclick: () => addCardRow(cardsBox) }, '＋ 添加')),
-    cardsBox,
-  );
-}
-
-function collectResultForm(body, source) {
-  const matchId = body.querySelector('#rs-match').value;
-  const scoreA = clamp(body.querySelector('#rs-scoreA').value);
-  const scoreB = clamp(body.querySelector('#rs-scoreB').value);
-  const goalsA = [...body.querySelectorAll('.goal-row[data-side="A"]')].map((row) => ({
-    no: row.querySelector('.g-no').value.trim(),
-    player: row.querySelector('.g-player').value.trim(),
-    time: row.querySelector('.g-time').value.trim(),
-    penalty: row.querySelector('.g-penalty').checked,
-  }));
-  const goalsB = [...body.querySelectorAll('.goal-row[data-side="B"]')].map((row) => ({
-    no: row.querySelector('.g-no').value.trim(),
-    player: row.querySelector('.g-player').value.trim(),
-    time: row.querySelector('.g-time').value.trim(),
-    penalty: row.querySelector('.g-penalty').checked,
-  }));
-  const substitutions = [...body.querySelectorAll('.sub-row')].map((row) => ({
-    team: row.querySelector('.s-team').value.trim(),
-    offNo: row.querySelector('.s-offNo').value.trim(),
-    offPlayer: row.querySelector('.s-off').value.trim(),
-    onNo: row.querySelector('.s-onNo').value.trim(),
-    onPlayer: row.querySelector('.s-on').value.trim(),
-    time: row.querySelector('.s-time').value.trim(),
-  })).filter((s) => s.offPlayer || s.onPlayer);
-  const cards = [...body.querySelectorAll('.card-row')].map((row) => ({
-    team: row.querySelector('.c-team').value.trim(),
-    player: row.querySelector('.c-player').value.trim(),
-    no: row.querySelector('.c-no').value.trim(),
-    type: row.querySelector('.c-type').value,
-    time: row.querySelector('.c-time').value.trim(),
-  })).filter((c) => c.player);
-  return {
-    matchId,
-    data: {
-      scoreA, scoreB, goalsA, goalsB,
-      substitutions, cards, source,
-      refereeRoles: {
-        main: body.querySelector('#rs-referee-main').value.trim(),
-        assistant1: body.querySelector('#rs-referee-a1').value.trim(),
-        assistant2: body.querySelector('#rs-referee-a2').value.trim(),
-        fourth: body.querySelector('#rs-referee-fourth').value.trim(),
-      },
-      lineupA: {
-        color: body.querySelector('#rs-colorA').value.trim(),
-        starting: linesOfTextarea(body.querySelector('#rs-lineupA-start')),
-        substitutes: linesOfTextarea(body.querySelector('#rs-lineupA-bench')),
-      },
-      lineupB: {
-        color: body.querySelector('#rs-colorB').value.trim(),
-        starting: linesOfTextarea(body.querySelector('#rs-lineupB-start')),
-        substitutes: linesOfTextarea(body.querySelector('#rs-lineupB-bench')),
-      },
-    },
-  };
-}
-
-function linesOfTextarea(node) {
-  return (node.value || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
-}
-
-function lineupToText(lineup) {
-  if (!lineup) return '';
-  const arr = lineup.starting || [];
-  return arr.map((p) => (p.no ? `${p.no} ${p.name}` : p.name)).join('\n');
-}
-
-function label(text) {
-  return el('div', { class: 'small muted' }, text);
-}
-
-function numberInput(id, value) {
-  return el('input', {
-    id, type: 'number', min: 0, max: 99, value,
-    inputmode: 'numeric', style: { textAlign: 'center', fontWeight: '700' },
-  });
-}
-
-function renderGoalRows(box, side, count, aiGoals = []) {
-  clear(box);
-  for (let i = 0; i < count; i += 1) {
-    const ai = aiGoals.filter((g) => g.side === side)[i];
-    const row = el('div', {
-      class: 'goal-row result-edit-row', dataset: { side },
-      style: { gridTemplateColumns: '58px 1fr 78px 74px' },
-    },
-      el('input', { class: 'g-no', placeholder: '号', value: ai?.no || '' }),
-      el('input', { class: 'g-player', placeholder: `第 ${i + 1} 球球员（可留空）`, value: ai?.player || '' }),
-      el('input', { class: 'g-time', placeholder: "时间 23'", value: ai?.time || '' }),
-      el('label', { class: 'row', style: { fontSize: '12px', gap: '4px' } },
-        el('input', { class: 'g-penalty', type: 'checkbox', checked: ai?.penalty || false, style: { width: 'auto' } }),
-        '点球'));
-    box.append(row);
-  }
-}
-
-function clamp(v) {
-  const n = Math.max(0, Math.min(99, Number(v) || 0));
-  return Number.isInteger(n) ? n : 0;
-}
-
 function field(labelText, input, required = true) {
   return el('label', { class: 'field' },
     el('span', { class: required ? 'required' : '' }, labelText), input);
-}
-
-function addSubRow(box, init = {}) {
-  const row = el('div', { class: 'sub-row result-edit-row', style: { gridTemplateColumns: '76px 1fr 52px 1fr 52px 74px auto' } },
-    el('input', { class: 's-team', placeholder: '球队', value: init.team || '' }),
-    el('input', { class: 's-off', placeholder: '下场球员', value: init.offPlayer || '' }),
-    el('input', { class: 's-offNo', placeholder: '号', value: init.offNo || '' }),
-    el('input', { class: 's-on', placeholder: '上场球员', value: init.onPlayer || '' }),
-    el('input', { class: 's-onNo', placeholder: '号', value: init.onNo || '' }),
-    el('input', { class: 's-time', placeholder: "46'", value: init.time || '' }),
-    el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
-  box.append(row);
-}
-
-function addCardRow(box, init = {}) {
-  const row = el('div', { class: 'card-row result-edit-row', style: { gridTemplateColumns: '1fr 1fr 60px 100px 74px auto' } },
-    el('input', { class: 'c-team', placeholder: '球队', value: init.team || '' }),
-    el('input', { class: 'c-player', placeholder: '球员', value: init.player || '' }),
-    el('input', { class: 'c-no', placeholder: '号', value: init.no || '' }),
-    el('select', { class: 'c-type' },
-      el('option', { value: 'yellow', selected: init.type !== 'red' }, '黄牌'),
-      el('option', { value: 'red', selected: init.type === 'red' }, '红牌')),
-    el('input', { class: 'c-time', placeholder: "33'", value: init.time || '' }),
-    el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
-  box.append(row);
 }
 
 // ===================== AI 识图 =====================
@@ -926,7 +671,14 @@ async function startRecognize(modal, state, event, matches) {
       `识别失败：${err.message}`, el('div', { class: 'small' }, '系统未写入任何脏数据，请改用人工录入。')));
     modal.setFoot([
       btn('返回上传', { onClick: () => { modal.close(); openAiFlow(event, matches, null); } }),
-      btn('改用人工录入', { type: 'primary', onClick: () => { modal.close(); openManualResult(event, matches); } }),
+      btn('改用人工录入', {
+        type: 'primary',
+        onClick: () => {
+          modal.close();
+          // 兜底与「编辑」共用同一个统一编辑界面，避免两套表单数据不一致
+          openMatchEditor({ event, matches, match: matches.find((x) => x.id === state.preferMatchId) || null });
+        },
+      }),
     ]);
   }
 }
@@ -945,13 +697,14 @@ function renderAiResult(modal, bodyEl, res, event, matches) {
   bodyEl.append(metaLine, warnings, preview);
   modal.setFoot([
     btn('取消', { onClick: () => modal.close() }),
-    btn('✍ 填入结果表单并提交', {
+    btn('✍ 填入统一编辑界面并复核', {
       type: 'primary', onClick: () => {
         modal.close();
-        openManualResult(event, matches, {
-          match: m,
-          confidence: conf,
-          warnings: res.warnings,
+        openMatchEditor({
+          event,
+          matches,
+          match: matches.find((x) => x.id === res.suggestedMatchId) || null,
+          aiResult: { match: m, confidence: conf, warnings: res.warnings },
         });
       },
     }),

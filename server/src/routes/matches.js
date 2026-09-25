@@ -40,6 +40,31 @@ function minuteOf(time) {
   return Number.isFinite(n) ? n : 999;
 }
 
+// 赛事结束后比赛数据锁定：只有管理员可以更正，
+// 避免赛后随意改动比分、牌表与赛程。所有修改类接口共用这一条规则。
+function assertEditable(event, user, what = '比赛数据') {
+  if (event.status === 'ended' && user.role !== 'admin') {
+    throw badRequest(`赛事已结束，${what}已锁定；如需更正请联系管理员`);
+  }
+}
+
+// 空字符串 / null / undefined 一律视为「未填写」，返回 null，否则转成数字
+function optionalScore(v) {
+  if (v === undefined || v === null || String(v).trim() === '') return null;
+  return Number(v);
+}
+
+// 本次提交生效后的四人裁判组名单（主裁 / 一助 / 二助 / 第四官员），用于同步 referee_list
+function refereeListOf(next, match) {
+  const pick = (key, fallback) => String((next[key] !== undefined ? next[key] : fallback) || '').trim();
+  return [
+    pick('referee', match.referee),
+    pick('assistant1', match.assistant1),
+    pick('assistant2', match.assistant2),
+    pick('fourth_official', match.fourth_official),
+  ].filter(Boolean);
+}
+
 async function detailsOfMatch(db, m) {
   const goals = await db.all(
     `SELECT id, side, player, player_no, goal_time, is_penalty FROM match_goals
@@ -259,6 +284,7 @@ export function registerMatchRoutes(router) {
     requireAction(user, 'result.record');
     await assertEventScope(db, user, 'result.record', match.event_id);
     const event = await loadEvent(db, match.event_id);
+    assertEditable(event, user, '比赛信息');
     const body = await readJson(req);
     const s = validateSchedule(body, true);
     const next = {};
@@ -309,6 +335,7 @@ export function registerMatchRoutes(router) {
     // 删除比赛同样对管理员与数据录入员开放
     requireAction(user, 'result.record');
     await assertEventScope(db, user, 'result.record', match.event_id);
+    assertEditable(await loadEvent(db, match.event_id), user, '比赛信息');
     const wasFinished = match.status === 'finished';
     await db.run('DELETE FROM matches WHERE id = ?', [match.id]);
     await audit(db, user, 'match.delete', 'match', match.id,
@@ -327,6 +354,7 @@ export function registerMatchRoutes(router) {
     const db = getDb();
     const match = await loadMatch(db, params.id);
     await assertEventScope(db, user, 'result.record', match.event_id);
+    assertEditable(await loadEvent(db, match.event_id), user, '特殊情况说明');
     const body = await readJson(req);
     const specialNote = String(body.specialNote ?? '').trim();
     await db.run('UPDATE matches SET special_note = ? WHERE id = ?', [specialNote, match.id]);
@@ -343,6 +371,7 @@ export function registerMatchRoutes(router) {
     const db = getDb();
     const match = await loadMatch(db, params.id);
     await assertEventScope(db, user, 'result.record', match.event_id);
+    assertEditable(await loadEvent(db, match.event_id), user, '工作人员信息');
     const body = await readJson(req);
     const staff = body.matchStaff && typeof body.matchStaff === 'object' ? body.matchStaff : {};
     const val = (key) => String(staff[key] ?? '').trim().slice(0, 40);
@@ -360,6 +389,222 @@ export function registerMatchRoutes(router) {
     sendJson(res, 200, await detailsOfMatch(db, fresh));
   });
 
+  // ---------------- 比赛编辑统一入口：比赛信息 + 比赛数据 + 工作人员 ----------------
+  // 赛程安排里每场比赛的「编辑」按钮，以及 AI 识图失败后的「改用人工录入」，
+  // 都走这一个接口：一次提交、一个事务写库，避免分三次保存造成前后台数据不一致。
+  // 权限：管理员 / 被指派的数据录入员可编辑，参赛队员只读；赛事结束后仅管理员可改。
+  //
+  // 比分的三种语义：
+  //   不传 scoreA/scoreB        → 只改比赛信息/工作人员，赛果原样保留；
+  //   显式传空（null 或 ""）    → 撤销赛果，本场回到未开赛并清除事件记录；
+  //   填写比分                  → 写入赛果并把本场标记为已完赛。
+  router.add('PATCH', '/api/matches/:id/full', async (req, res, params) => {
+    const user = await authUser(req);
+    requireAction(user, 'result.record');
+    const db = getDb();
+    const match = await loadMatch(db, params.id);
+    await assertEventScope(db, user, 'result.record', match.event_id);
+    const event = await loadEvent(db, match.event_id);
+    assertEditable(event, user, '比赛数据');
+    const body = await readJson(req);
+    const next = {};
+    const clip = (v, n) => String(v ?? '').trim().slice(0, n);
+
+    // ---------- ① 比赛信息 ----------
+    const teamAId = clip(body.teamAId, 64);
+    const teamBId = clip(body.teamBId, 64);
+    if (teamAId && teamBId) {
+      if (teamAId === teamBId) throw badRequest('主队与客队不能相同');
+      for (const rid of [teamAId, teamBId]) {
+        const reg = await db.get(
+          'SELECT 1 FROM registrations WHERE id = ? AND event_id = ?', [rid, event.id],
+        );
+        if (!reg) throw badRequest('对阵球队需为本赛事的报名球队');
+      }
+      next.team_a_id = teamAId;
+      next.team_b_id = teamBId;
+    } else if (teamAId || teamBId) {
+      throw badRequest('主队与客队必须同时选择');
+    }
+    if (body.date !== undefined) {
+      const d = clip(body.date, 10);
+      if (d && !/^\d{4}-\d{2}-\d{2}$/.test(d)) throw badRequest('日期格式应为 YYYY-MM-DD');
+      next.match_date = d;
+    }
+    if (body.time !== undefined) {
+      const t = clip(body.time, 5);
+      if (t && !/^\d{2}:\d{2}$/.test(t)) throw badRequest('时间格式应为 HH:mm');
+      next.start_time = t;
+    }
+    if (body.venue !== undefined) next.venue = clip(body.venue, 60);
+    if (body.referee !== undefined) next.referee = clip(body.referee, 40);
+    if (body.assistant1 !== undefined) next.assistant1 = clip(body.assistant1, 40);
+    if (body.assistant2 !== undefined) next.assistant2 = clip(body.assistant2, 40);
+    if (body.fourthOfficial !== undefined) next.fourth_official = clip(body.fourthOfficial, 40);
+    if (body.specialNote !== undefined) next.special_note = clip(body.specialNote, 500);
+    if (body.roundName !== undefined) next.round_name = clip(body.roundName, 20);
+    // 只有「小组赛+淘汰赛」赛制的小组赛才需要选小组；单循环联赛没有分组
+    if (body.groupName !== undefined && (match.stage || 'group') === 'group'
+      && (event.format || 'group_knockout') === 'group_knockout') {
+      const g = clip(body.groupName, 1).toUpperCase();
+      if (!/^[A-F]$/.test(g)) throw badRequest('小组赛请选择小组（A-F）');
+      next.group_name = g;
+    }
+    if (body.knockoutRound !== undefined && match.stage === 'knockout') {
+      const r = clip(body.knockoutRound, 20);
+      if (!r) throw badRequest('请选择或填写淘汰赛轮次');
+      next.knockout_round = r;
+    }
+    // ---------- ③ 工作人员（裁判组之外） ----------
+    if (body.matchStaff && typeof body.matchStaff === 'object') {
+      next.match_supervisor = clip(body.matchStaff.supervisor, 40);
+      next.photographer = clip(body.matchStaff.photographer, 40);
+      next.videographer = clip(body.matchStaff.videographer, 40);
+      next.commentator = clip(body.matchStaff.commentator, 40);
+      next.reporter = clip(body.matchStaff.reporter, 40);
+    }
+
+    // ---------- ② 比赛数据 ----------
+    const scoreTouched = body.scoreA !== undefined || body.scoreB !== undefined;
+    const scoreA = optionalScore(body.scoreA);
+    const scoreB = optionalScore(body.scoreB);
+    if (scoreTouched && (scoreA === null) !== (scoreB === null)) {
+      throw badRequest('请同时填写双方比分，或都留空表示本场未开赛');
+    }
+    const hasResult = scoreTouched && scoreA !== null && scoreB !== null;
+    const clearResult = scoreTouched && scoreA === null && scoreB === null;
+    if (hasResult) {
+      if (!Number.isInteger(scoreA) || scoreA < 0 || scoreA > 99) throw badRequest('主队进球数需为非负整数');
+      if (!Number.isInteger(scoreB) || scoreB < 0 || scoreB > 99) throw badRequest('客队进球数需为非负整数');
+    }
+    let goalsA = [];
+    let goalsB = [];
+    let subs = [];
+    let cards = [];
+    if (hasResult) {
+      goalsA = Array.isArray(body.goalsA) ? body.goalsA : [];
+      goalsB = Array.isArray(body.goalsB) ? body.goalsB : [];
+      if (goalsA.length !== scoreA || goalsB.length !== scoreB) {
+        throw badRequest('进球球员名单数量必须与进球数一致（每球一个输入框，可留空记“未登记”）');
+      }
+      subs = Array.isArray(body.substitutions) ? body.substitutions : [];
+      cards = Array.isArray(body.cards) ? body.cards : [];
+      const subsOk = subs.every((s) => s && String(s.offPlayer || '').trim() && String(s.onPlayer || '').trim());
+      if (!subsOk) throw badRequest('换人记录需同时填写下场与上场球员');
+      const cardsOk = cards.every((c) => c && String(c.player || '').trim()
+        && ['yellow', 'red'].includes(String(c.type || '')));
+      if (!cardsOk) throw badRequest('红黄牌记录需包含球员与牌型（yellow/red）');
+    }
+    if (body.lineupA !== undefined) next.lineup_a = JSON.stringify(cleanLineup(body.lineupA));
+    if (body.lineupB !== undefined) next.lineup_b = JSON.stringify(cleanLineup(body.lineupB));
+
+    await db.exec('BEGIN');
+    try {
+      const keys = Object.keys(next);
+      if (keys.length) {
+        await db.run(
+          `UPDATE matches SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`,
+          [...keys.map((k) => next[k]), match.id],
+        );
+      }
+      if (hasResult) {
+        await db.run('DELETE FROM match_goals WHERE match_id = ?', [match.id]);
+        await db.run('DELETE FROM match_subs WHERE match_id = ?', [match.id]);
+        await db.run('DELETE FROM match_cards WHERE match_id = ?', [match.id]);
+        const normGoals = (list, side) => list.map((g, idx) => ({
+          side,
+          no: String((g && (g.no ?? '')) || '').trim(),
+          player: String((g && g.player) || '').trim() || '未登记',
+          time: String((g && g.time) || '').trim(),
+          penalty: Boolean(g && g.penalty),
+          sortKey: idx,
+        }));
+        for (const g of [...normGoals(goalsA, 'A'), ...normGoals(goalsB, 'B')]) {
+          await db.run(
+            `INSERT INTO match_goals (id, match_id, side, player, player_no, goal_time, is_penalty)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [uid('g_'), match.id, g.side, g.player, g.no || null, g.time || null, g.penalty ? 1 : 0],
+          );
+        }
+        for (const s of subs) {
+          await db.run(
+            `INSERT INTO match_subs (id, match_id, team, off_player, on_player, off_no, on_no, sub_time)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [uid('s_'), match.id, String(s.team || '').trim(),
+              String(s.offPlayer).trim(), String(s.onPlayer).trim(),
+              String(s.offNo ?? '').trim() || null,
+              String(s.onNo ?? '').trim() || null,
+              String(s.time || '').trim() || null],
+          );
+        }
+        for (const c of cards) {
+          await db.run(
+            `INSERT INTO match_cards (id, match_id, team, player, player_no, card_type, card_time)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [uid('c_'), match.id, String(c.team || '').trim(),
+              String(c.player).trim(), String(c.no ?? '').trim() || null, String(c.type),
+              String(c.time || '').trim() || null],
+          );
+        }
+        await db.run(
+          `UPDATE matches SET score_a = ?, score_b = ?, referee_list = ?,
+                              status = 'finished', finished_by = ?, finished_at = ?
+            WHERE id = ?`,
+          [scoreA, scoreB, JSON.stringify(refereeListOf(next, match)),
+            user.id, nowIso(), match.id],
+        );
+        // 红牌至少停赛一轮：自动登记一条「下一轮停赛」，避免红牌记录状态空着。
+        // 该球员若已有待执行记录则跳过；已执行过的旧记录不影响新停赛。
+        for (const c of cards.filter((x) => x.type === 'red')) {
+          const cardTeam = String(c.team || '').trim();
+          const cardPlayer = String(c.player).trim();
+          if (!cardTeam || !cardPlayer) continue;
+          const reg = await db.get(
+            'SELECT id, team_name FROM registrations WHERE event_id = ? AND team_name = ?',
+            [match.event_id, cardTeam],
+          );
+          if (!reg) continue;
+          const pending = await db.get(
+            `SELECT id FROM player_suspensions
+              WHERE event_id = ? AND registration_id = ? AND player = ?
+                AND reason = 'red_card' AND status = 'pending'`,
+            [match.event_id, reg.id, cardPlayer],
+          );
+          if (pending) continue;
+          await db.run(
+            `INSERT INTO player_suspensions
+               (id, event_id, registration_id, team_name, player, player_no, reason, note,
+                status, cleared_yellow, created_by, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, 'red_card', ?, 'pending', 0, ?, ?)`,
+            [uid('sus_'), match.event_id, reg.id, reg.team_name, cardPlayer,
+              String(c.no ?? '').trim() || null, null, user.id, nowIso()],
+          );
+        }
+      } else if (clearResult) {
+        // 显式传空比分：撤销赛果，本场回到「未开赛」并清掉事件记录
+        await db.run('DELETE FROM match_goals WHERE match_id = ?', [match.id]);
+        await db.run('DELETE FROM match_subs WHERE match_id = ?', [match.id]);
+        await db.run('DELETE FROM match_cards WHERE match_id = ?', [match.id]);
+        await db.run(
+          `UPDATE matches SET score_a = 0, score_b = 0, status = 'scheduled',
+                              finished_by = NULL, finished_at = NULL
+            WHERE id = ?`,
+          [match.id],
+        );
+      }
+      await db.exec('COMMIT');
+    } catch (e) {
+      await db.exec('ROLLBACK');
+      throw e;
+    }
+    await audit(db, user, 'match.edit.full', 'match', match.id,
+      { eventId: match.event_id, hasResult, clearResult, fields: Object.keys(next),
+        goals: goalsA.length + goalsB.length, cards: cards.length, subs: subs.length,
+        source: body.source || 'manual' }, clientIp(req));
+    const fresh = await db.get('SELECT * FROM matches WHERE id = ?', [match.id]);
+    sendJson(res, 200, await detailsOfMatch(db, fresh));
+  });
+
   // ---------------- 比赛结果录入（人工或 AI 复核后提交共用） ----------------
   router.add('POST', '/api/matches/:id/result', async (req, res, params) => {
     const user = await authUser(req);
@@ -368,7 +613,7 @@ export function registerMatchRoutes(router) {
     const match = await loadMatch(db, params.id);
     await assertEventScope(db, user, 'result.record', match.event_id);
     const event = await loadEvent(db, match.event_id);
-    if (event.status === 'ended') throw badRequest('赛事已结束，结果已锁定');
+    assertEditable(event, user, '比赛数据');
 
     const body = await readJson(req);
     const scoreA = Number(body.scoreA);
