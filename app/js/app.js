@@ -37,7 +37,7 @@ function parseHash() {
 export function renderTop({ title = '', showBack = false } = {}) {
   clear(topbar);
   const brand = el('div', { class: 'brand', onclick: () => go('#/home') },
-    el('img', { src: '/icon.jpg', alt: 'logo' }),
+    el('img', { src: '/icon.png', alt: 'logo' }),
     title ? el('span', { class: 'top-title' }, title)
       : el('span', {}, '绿茵BIT'),
   );

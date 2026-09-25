@@ -15,7 +15,7 @@ export async function renderLogin(container) {
   const wrap = el('div', { class: 'login-wrap' });
   wrap.append(
     el('div', { class: 'login-logo' },
-      el('img', { src: '/icon.jpg', alt: '绿茵BIT' }),
+      el('img', { src: '/icon.png', alt: '绿茵BIT' }),
       el('h1', {}, '绿茵BIT'),
       el('p', {}, '北理工校园足球赛事管理系统')),
   );
