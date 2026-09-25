@@ -302,7 +302,7 @@ function providerHint(reason) {
   return '';
 }
 
-function normalizeResult(parsed, teamOptions) {
+export function normalizeResult(parsed, teamOptions) {
   const m = parsed?.match || {};
   const a = matchTeam(m.teamA, teamOptions);
   const b = matchTeam(m.teamB, teamOptions);
@@ -319,42 +319,89 @@ function normalizeResult(parsed, teamOptions) {
     return matched ? matched.name : String(raw || '').trim();
   };
   const rawLineups = m.lineups || {};
+  // ---- 白名单校验：把识别出的球员对照该队报名名单 ----
+  // 号码在同一队唯一，是最可靠的锚点；姓名只在完全一致时才认可，
+  // 模糊匹配出的结果只作为提示，不自动替换，避免把两个相似姓名改错。
+  const notes = [];
+  // a / b 是球队对象；resolveTeam 返回的是球队名，所以这里两者都接受
+  const rosterOf = (key) => (teamOptions.find((t) => t.id === key || t.name === key) || {}).members || [];
+  const digits = (v) => String(v ?? '').replace(/\D/g, '');
+  const fixPlayer = (rawName, rawNo, roster) => {
+    const name = String(rawName || '').trim();
+    const no = digits(rawNo);
+    if (!name || !roster || !roster.length) return { name, no };
+    if (no) {
+      const byNo = roster.filter((r) => digits(r.jerseyNo) === no);
+      if (byNo.length === 1) {
+        if (byNo[0].name !== name) {
+          notes.push(`按 ${no} 号校正为报名名单中的「${byNo[0].name}」（原识别为「${name}」）`);
+        }
+        return { name: byNo[0].name, no };
+      }
+    }
+    if (roster.some((r) => r.name === name)) return { name, no };
+    let best = null;
+    for (const r of roster) {
+      const s = similar(name, r.name);
+      if (!best || s > best.score) best = { name: r.name, score: s };
+    }
+    if (best && best.score >= 0.5) {
+      notes.push(`「${name}」不在报名名单中，最接近的是「${best.name}」，请核实`);
+    } else {
+      notes.push(`「${name}」不在报名名单中，请核实`);
+    }
+    return { name, no };
+  };
+  const fixList = (list, roster) => list.map((p) => fixPlayer(p.name, p.no, roster));
   const lineups = {
     A: {
       color: String(m.kitColorA || rawLineups.kitColorA || '').trim(),
-      starting: parseLineupList(rawLineups.A?.starting),
-      substitutes: parseLineupList(rawLineups.A?.substitutes),
+      starting: fixList(parseLineupList(rawLineups.A?.starting), rosterOf(a.id)),
+      substitutes: fixList(parseLineupList(rawLineups.A?.substitutes), rosterOf(a.id)),
     },
     B: {
       color: String(m.kitColorB || rawLineups.kitColorB || '').trim(),
-      starting: parseLineupList(rawLineups.B?.starting),
-      substitutes: parseLineupList(rawLineups.B?.substitutes),
+      starting: fixList(parseLineupList(rawLineups.B?.starting), rosterOf(b.id)),
+      substitutes: fixList(parseLineupList(rawLineups.B?.substitutes), rosterOf(b.id)),
     },
   };
-  const goals = (Array.isArray(m.goals) ? m.goals : []).slice(0, 20).map((g) => ({
-    side: String(g.team || '').toUpperCase() === 'B' ? 'B' : 'A',
-    no: String(g.no ?? '').trim(),
-    player: String(g.player || '').trim(),
-    time: String(g.time || '').trim(),
-    penalty: Boolean(g.penalty),
-  })).filter((g) => g.player);
+  const goals = (Array.isArray(m.goals) ? m.goals : []).slice(0, 20).map((g) => {
+    const side = String(g.team || '').toUpperCase() === 'B' ? 'B' : 'A';
+    const fixed = fixPlayer(g.player, g.no, rosterOf(side === 'B' ? b.id : a.id));
+    return {
+      side,
+      no: fixed.no,
+      player: fixed.name,
+      time: String(g.time || '').trim(),
+      penalty: Boolean(g.penalty),
+    };
+  }).filter((g) => g.player);
   const substitutions = (Array.isArray(m.substitutions) ? m.substitutions : [])
-    .slice(0, 12).map((s) => ({
-      team: resolveTeam(s.team),
-      offNo: String(s.offNo ?? '').trim(),
-      offPlayer: String(s.offPlayer || '').trim(),
-      onNo: String(s.onNo ?? '').trim(),
-      onPlayer: String(s.onPlayer || '').trim(),
-      time: String(s.time || '').trim(),
-    })).filter((s) => s.offPlayer && s.onPlayer);
+    .slice(0, 12).map((s) => {
+      const teamId = resolveTeam(s.team);
+      const roster = rosterOf(teamId);
+      const off = fixPlayer(s.offPlayer, s.offNo, roster);
+      const on = fixPlayer(s.onPlayer, s.onNo, roster);
+      return {
+        team: teamId,
+        offNo: off.no,
+        offPlayer: off.name,
+        onNo: on.no,
+        onPlayer: on.name,
+        time: String(s.time || '').trim(),
+      };
+    }).filter((s) => s.offPlayer && s.onPlayer);
   const cards = (Array.isArray(m.cards) ? m.cards : [])
-    .slice(0, 20).map((c) => ({
-      team: resolveTeam(c.team),
-      no: String(c.no ?? '').trim(),
-      player: String(c.player || '').trim(),
-      type: String(c.type || '').toLowerCase().startsWith('red') ? 'red' : 'yellow',
-      time: String(c.time || '').trim(),
-    })).filter((c) => c.player);
+    .slice(0, 20).map((c) => {
+      const fixed = fixPlayer(c.player, c.no, rosterOf(resolveTeam(c.team)));
+      return {
+        team: resolveTeam(c.team),
+        no: fixed.no,
+        player: fixed.name,
+        type: String(c.type || '').toLowerCase().startsWith('red') ? 'red' : 'yellow',
+        time: String(c.time || '').trim(),
+      };
+    }).filter((c) => c.player);
   const conf = {
     overall: clampConfidence(parsed?.confidence?.overall ?? 0),
     score: clampConfidence(parsed?.confidence?.score ?? 0),
@@ -373,8 +420,9 @@ function normalizeResult(parsed, teamOptions) {
   }
   return {
     match: {
-      registrationA: a,
-      registrationB: b,
+      // 只回传球队标识，避免把整份名单带进接口响应
+      registrationA: { id: a.id, name: a.name },
+      registrationB: { id: b.id, name: b.name },
       scoreA: Number.isFinite(Number(m.scoreA)) ? Number(m.scoreA) : 0,
       scoreB: Number.isFinite(Number(m.scoreB)) ? Number(m.scoreB) : 0,
       kitColorA: lineups.A.color,
@@ -393,7 +441,10 @@ function normalizeResult(parsed, teamOptions) {
         : { main: '', assistant1: '', assistant2: '', fourth: '' },
     },
     confidence: conf,
-    warnings: Array.isArray(parsed?.warnings) ? parsed.warnings.map(String) : [],
+    warnings: [
+      ...(Array.isArray(parsed?.warnings) ? parsed.warnings.map(String) : []),
+      ...notes,
+    ],
   };
 }
 

@@ -54,6 +54,19 @@ export function registerAiRoutes(router) {
         WHERE event_id = ? AND status = 'approved' ORDER BY team_name`,
       [eventId],
     );
+    // 带上各队报名名单，供 AI 结果做姓名/号码核对（白名单校验）
+    const memberRows = await db.all(
+      `SELECT registration_id, name, jersey_no FROM registration_members
+        WHERE registration_id IN (
+          SELECT id FROM registrations WHERE event_id = ? AND status = 'approved'
+        )`,
+      [eventId],
+    );
+    for (const t of teamOptions) {
+      t.members = memberRows
+        .filter((m) => m.registration_id === t.id)
+        .map((m) => ({ name: m.name, jerseyNo: m.jersey_no || '' }));
+    }
     const openMatches = await db.all(
       `SELECT id, team_a_id, team_b_id, match_date, start_time, venue
          FROM matches WHERE event_id = ? AND status = 'scheduled'
