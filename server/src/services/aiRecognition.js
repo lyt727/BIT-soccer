@@ -3,8 +3,9 @@ import { config } from '../config.js';
 // =============================================================
 // AI 裁判报告识图
 // 裁判报告一次包含：双方首发/替补（号码+姓名）、比赛服颜色、
-// 比赛信息（日期/时间/场地）、比分、进球、换人、红黄牌、
-// 裁判组与其他工作人员（比赛监督/拍照/录像/解说/战报）→ 全部结构化输出。
+// 比分、进球、换人、红黄牌、裁判组 → 全部结构化输出。
+// 注意：日期/时间/场地/工作人员不在裁判报告范围内，提示词不要求识别；
+// 解析层仍兼容这些字段（若某份报告写了就带过来，没写就留空）。
 // demo 模式离线演示；vision 模式调用 OpenAI 兼容视觉大模型。
 // =============================================================
 
@@ -15,28 +16,23 @@ const SYSTEM_PROMPT = `你是一名专业的足球赛事裁判报告识图引擎
 
 【逐项核对清单：报告上写过的都要抄，一栏都别漏】
 一张完整的裁判报告通常有下面这些栏目，请逐栏看一遍再输出：
- 1. 比赛信息：比赛名称、日期、开球时间、比赛场地、阶段/轮次；
- 2. 双方队名、比赛服颜色（上衣/短裤/球袜；写在一起就连起来抄）；
- 3. 比分（全场；若报告另写了半场比分，抄进 warnings 说明）；
- 4. 主队首发名单：每人号码 + 姓名；
- 5. 主队替补名单：每人号码 + 姓名；
- 6. 客队首发名单：每人号码 + 姓名；
- 7. 客队替补名单：每人号码 + 姓名；
- 8. 进球：时间、球员、号码、是否点球；几个球就几条，不合并、不省略；
- 9. 换人：时间、下场球员、上场球员；换了几次就几条；
-10. 红黄牌：时间、球员、号码、牌型；几张牌就几条；
-11. 裁判组：主裁判、第一助理裁判、第二助理裁判、第四官员；
-12. 其他工作人员：比赛监督、拍照、录像、解说、战报；
-13. 特殊情况：中断、延期、补时、受伤、弃权、争议判罚等文字说明。
+ 1. 双方队名、比赛服颜色（上衣/短裤/球袜；写在一起就连起来抄）；
+ 2. 比分（全场；若报告另写了半场比分，抄进 warnings 说明）；
+ 3. 主队首发名单：每人号码 + 姓名；
+ 4. 主队替补名单：每人号码 + 姓名；
+ 5. 客队首发名单：每人号码 + 姓名；
+ 6. 客队替补名单：每人号码 + 姓名；
+ 7. 进球：时间、球员、号码、是否点球；几个球就几条，不合并、不省略；
+ 8. 换人：时间、下场球员、上场球员；换了几次就几条；
+ 9. 红黄牌：时间、球员、号码、牌型；几张牌就几条；
+10. 裁判组：主裁判、第一助理裁判、第二助理裁判、第四官员；
+11. 特殊情况：中断、延期、补时、受伤、弃权、争议判罚等文字说明。
 
 
 {
   "match": {
     "teamA": "主队名（对照候选球队纠错）",
     "teamB": "客队名",
-    "date": "比赛日期，照抄报告写法，如 2026-04-12 或 2026年4月12日",
-    "time": "开球时间，如 15:30",
-    "venue": "比赛场地，如 西操场 1 号场",
     "kitColorA": "主队比赛服颜色，如 红白",
     "kitColorB": "客队比赛服颜色",
     "lineups": {
@@ -66,19 +62,11 @@ const SYSTEM_PROMPT = `你是一名专业的足球赛事裁判报告识图引擎
       "assistant2": "第二助理裁判姓名",
       "fourth": "第四官员姓名"
     },
-    "staff": {
-      "supervisor": "比赛监督姓名",
-      "photographer": "拍照负责人姓名",
-      "videographer": "录像负责人姓名",
-      "commentator": "解说姓名",
-      "reporter": "战报作者姓名"
-    },
     "specialNote": "特殊情况原文（中断/延期/补时/受伤/弃权/争议判罚等），没有就留空"
   },
   "confidence": {
     "overall": 0, "score": 0, "lineups": 0, "kit": 0,
-    "goals": 0, "substitutions": 0, "cards": 0, "referees": 0,
-    "info": 0, "staff": 0
+    "goals": 0, "substitutions": 0, "cards": 0, "referees": 0
   },
   "warnings": ["低置信度/缺失字段逐条说明"]
 }
@@ -90,7 +78,6 @@ const SYSTEM_PROMPT = `你是一名专业的足球赛事裁判报告识图引擎
 - 红黄牌：type 只能是 "yellow" 或 "red"（看到“黄牌/警告”写 yellow，看到“红牌/罚下”写 red）；
 - 进球、换人、红黄牌里的 team：主队一律填 "A"，客队一律填 "B"；
 - 时间照抄报告上的写法（如 33'、45+2'），不要换算、不要四舍五入；
-- 日期照抄报告写法（2026-04-12、2026年4月12日 都可以），时间写成 15:30 这样的格式；
 - confidence.overall 低于 0.4 视为识别失败。
 
 【某条记录缺字段时：保留整条，不要整条丢掉】
@@ -223,9 +210,6 @@ async function demoResult(teamOptions, scheduledPairs) {
   const pair = scheduledPairs[0];
   const a = pair ? teamOptions.find((t) => t.id === pair.team_a_id) : teamOptions[0];
   const b = pair ? teamOptions.find((t) => t.id === pair.team_b_id) : teamOptions[1];
-  const pairDate = pair?.match_date || '';
-  const pairTime = pair?.start_time || '';
-  const pairVenue = pair?.venue || '';
   const aName = a ? a.name : '信息与电子学院一队';
   const bName = b ? b.name : '机械与车辆学院一队';
   const AStart = ['王强', '李昂', '周航', '陈宇', '赵一鸣', '孙凯', '吴迪', '郑浩', '冯旭', '高原', '张磊'];
@@ -237,9 +221,6 @@ async function demoResult(teamOptions, scheduledPairs) {
     match: {
       teamA: aName,
       teamB: bName,
-      date: pairDate,
-      time: pairTime,
-      venue: pairVenue,
       kitColorA: '红白',
       kitColorB: '蓝黑',
       lineups: {
@@ -263,19 +244,11 @@ async function demoResult(teamOptions, scheduledPairs) {
       referees: {
         main: '赵明', assistant1: '钱进', assistant2: '孙立', fourth: '周舟',
       },
-      staff: {
-        supervisor: '王老师',
-        photographer: '李同学',
-        videographer: '张同学',
-        commentator: '陈同学',
-        reporter: '刘同学',
-      },
       specialNote: '',
     },
     confidence: {
       overall: 0.97, score: 0.99, lineups: 0.96, kit: 0.95,
       goals: 0.96, substitutions: 0.95, cards: 0.97, referees: 0.98,
-      info: 0.95, staff: 0.93,
     },
     warnings: ['演示模式：请上传真实裁判报告并配置视觉模型密钥后启用真实识图。'],
   };
