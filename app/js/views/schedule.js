@@ -111,7 +111,7 @@ function matchCard(m, isAdmin, event, matches, canAi) {
       el('div', { class: 'row wrap mt8' },
         el('button', {
           class: 'btn sm outline', type: 'button',
-          onclick: () => openMatchStats(m, event, canAi),
+          onclick: () => openMatchStats(m, event),
         }, m.status === 'finished' ? '📊 技术统计与时间轴' : '📋 名单与赛前信息'),
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
@@ -167,10 +167,6 @@ const STAFF_FIELDS = [
   ['commentator', '解说'],
   ['reporter', '战报'],
 ];
-const staffPlaceholder = (key, label) => (key === 'supervisor'
-  ? `请输入${label}姓名`
-  : `请输入${label}同学姓名`);
-
 function staffSummary(m) {
   const parts = STAFF_FIELDS
     .map(([key, label]) => (m.matchStaff?.[key] ? `${label}：${m.matchStaff[key]}` : null))
