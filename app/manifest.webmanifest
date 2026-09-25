@@ -9,9 +9,9 @@
   "lang": "zh-CN",
   "icons": [
     {
-      "src": "/icon.svg",
+      "src": "/icon.jpg",
       "sizes": "any",
-      "type": "image/svg+xml",
+      "type": "image/jpeg",
       "purpose": "any"
     }
   ]
