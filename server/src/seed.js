@@ -373,5 +373,86 @@ export function seedIfEmpty(db) {
   updStaff.run('刘建国', '陈摄影', '', '', '', 'mt_evt1_gB1');
   updStaff.run('周老师', '李摄影', '赵摄像', '孙解说', '吴战报', 'mt_evt1_sf1');
 
+  // =========================================================
+  // 2026 秋季女足联赛：单循环联赛赛制演示数据
+  //   8 支球队，每两队交手一次 → 7 轮 28 场；前两轮完赛，便于查看联赛积分榜
+  // =========================================================
+  db.prepare(
+    `INSERT INTO events (id, name, season, description, format, status, created_by, created_at)
+     VALUES (?, ?, ?, ?, 'league', 'live', 'usr_admin', ?)`,
+  ).run('evt_women', '2026秋季女足联赛', '2026',
+    '单循环联赛赛制演示：8 支球队，每两队交手一次，共 7 轮 28 场', now);
+
+  const W_TEAMS = [
+    ['reg_w1', '信息与电子学院女足', '王丽', '李静', '红', '黑', '白'],
+    ['reg_w2', '机械与车辆学院女足', '张敏', '刘洋', '蓝', '蓝', '黑'],
+    ['reg_w3', '自动化学院女足', '陈静', '杨帆', '黄', '黑', '黄'],
+    ['reg_w4', '材料学院女足', '赵雪', '孙婷', '绿', '绿', '白'],
+    ['reg_w5', '宇航学院女足', '周敏', '吴倩', '紫', '白', '紫'],
+    ['reg_w6', '计算机学院女足', '徐丽', '郑洁', '橙', '黑', '橙'],
+    ['reg_w7', '数学与统计学院女足', '马晓', '冯雪', '白', '蓝', '白'],
+    ['reg_w8', '外国语学院女足', '何静', '许悦', '黑', '黑', '红'],
+  ];
+  W_TEAMS.forEach(([rid, teamName, coach, captain, top, shorts, socks], idx) => {
+    const roster = makeRoster(40 + idx, coach, captain, 12);
+    rosterByReg[rid] = { roster, teamName, color: top };
+    insertTeam(rid, 'evt_women', teamName, [top, shorts, socks], roster, 'approved', 12);
+  });
+  // 指派数据录入员，方便演示录分与 AI 识图
+  insertStaff.run('evt_women', 'usr_op', 'data_operator', 'usr_admin', now);
+
+  // 轮转法排单循环对阵（8 支为偶数，无轮空）
+  const wIds = W_TEAMS.map(([rid]) => rid);
+  const wRounds = [];
+  const rot = [...wIds];
+  for (let r = 0; r < wIds.length - 1; r += 1) {
+    const round = [];
+    for (let i = 0; i < rot.length / 2; i += 1) {
+      round.push([rot[i], rot[rot.length - 1 - i]]);
+    }
+    wRounds.push(round);
+    rot.splice(1, 0, rot.pop());
+  }
+
+  const insertWMatch = db.prepare(
+    `INSERT INTO matches
+      (id, event_id, team_a_id, team_b_id, stage, group_name, knockout_round, round_name,
+       match_date, start_time, venue, status, score_a, score_b,
+       finished_by, finished_at, created_by, created_at)
+     VALUES (?, 'evt_women', ?, ?, 'group', '', '', ?, ?, ?, ?, ?, ?, ?, ?, ?, 'usr_admin', ?)`);
+  const insertWGoal = db.prepare(
+    `INSERT INTO match_goals (id, match_id, side, player, player_no, goal_time, is_penalty)
+     VALUES (?, ?, ?, ?, ?, ?, 0)`);
+
+  let wSeq = 0;
+  wRounds.forEach((round, ri) => {
+    const finished = ri < 2; // 前两轮先完赛
+    round.forEach(([rawA, rawB], mi) => {
+      // 隔轮对调主客，避免同一支队总是排在主队位置
+      const swap = ri % 2 === 1;
+      const aId = swap ? rawB : rawA;
+      const bId = swap ? rawA : rawB;
+      wSeq += 1;
+      const mid = `mt_w_${wSeq}`;
+      const scoreA = finished ? (mi % 3) : 0;
+      const scoreB = finished ? ((mi + 1) % 2) : 0;
+      insertWMatch.run(
+        mid, aId, bId, `第${ri + 1}轮`,
+        `2026-10-${String(8 + ri * 2).padStart(2, '0')}`,
+        ['15:00', '16:30', '14:00', '17:00'][mi % 4],
+        VENUES[mi % VENUES.length],
+        finished ? 'finished' : 'scheduled', scoreA, scoreB,
+        finished ? 'usr_admin' : null, finished ? now : null, now,
+      );
+      if (finished && scoreA > 0) {
+        const scorer = rosterByReg[aId].roster
+          .find((m) => (m.roles || []).includes('player'));
+        if (scorer) {
+          insertWGoal.run(`g_w_${wSeq}`, mid, 'A', scorer.name, scorer.jerseyNo, "23'");
+        }
+      }
+    });
+  });
+
   return true;
 }
