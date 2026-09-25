@@ -255,9 +255,18 @@ async function callVisionModel(images, teamOptions) {
   });
   if (!res.ok) {
     const errText = await res.text().catch(() => '');
-    const err = new Error(`视觉模型调用失败（${res.status}）：${errText.slice(0, 300)}`);
+    // 抽取服务商返回里人能看懂的那句话，而不是把整段 JSON 抛给操作人
+    let reason = errText.slice(0, 300);
+    try {
+      const parsed = JSON.parse(errText);
+      reason = parsed?.error?.message || parsed?.message || reason;
+    } catch { /* 非 JSON，保持原文 */ }
+    const err = new Error(
+      `视觉模型调用失败（${res.status}）：${reason}${providerHint(reason)}`,
+    );
     err.status = 502;
     err.code = 'AI_PROVIDER_ERROR';
+    err.expose = true; // 运维类信息，直接显示给操作人，避免只能翻日志排查
     throw err;
   }
   const data = await res.json();
@@ -265,11 +274,32 @@ async function callVisionModel(images, teamOptions) {
   try {
     return JSON.parse(stripCodeFence(raw));
   } catch {
-    const err = new Error('视觉模型未返回合法结构化结果，请重试或改用人工录入');
+    const err = new Error('视觉模型未返回合法结构化结果，请重试或改用人工录入'
+      + '（若使用的是 OCR 专用模型，它通常不按 JSON 输出，建议换用通用视觉模型，'
+      + '或改用「OCR 认字 + 文本模型转结构」的两段式方案）');
     err.status = 502;
     err.code = 'AI_PARSE_ERROR';
+    err.expose = true;
     throw err;
   }
+}
+
+// 把常见的服务商报错翻译成可操作的提示
+function providerHint(reason) {
+  const s = String(reason || '');
+  if (/model.*?(not exist|not found|does not exist)|ModelNotExist/i.test(s)) {
+    return '（模型名不存在，请核对 AI_VISION_MODEL 与百炼控制台里的名称是否完全一致）';
+  }
+  if (/image (length and width|size)|image.*restriction/i.test(s)) {
+    return '（图片尺寸不符合模型要求，请换成正常大小的照片）';
+  }
+  if (/api.?key|invalid.?key|authentication|Unauthorized/i.test(s)) {
+    return '（API Key 无效或已过期，请检查 AI_VISION_API_KEY）';
+  }
+  if (/quota|balance|insufficient|arrears/i.test(s)) {
+    return '（账户余额或额度不足，请到百炼控制台充值）';
+  }
+  return '';
 }
 
 function normalizeResult(parsed, teamOptions) {
