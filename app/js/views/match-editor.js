@@ -151,13 +151,13 @@ function buildForm(event, state, redraw) {
     el('div', { class: 'grid cols-2 me-grid' }, field('主队', selA), field('客队', selB)),
     el('div', { class: 'row', style: { gap: '10px' } },
       el('div', { style: { flex: '1' } }, field('日期', el('input', {
-        id: 'me-date', type: 'date', value: match.date || '',
+        id: 'me-date', type: 'date', value: pick(aiM?.date, match.date),
       }), false)),
       el('div', { style: { flex: '1' } }, field('时间', el('input', {
-        id: 'me-time', type: 'time', value: match.time || '',
+        id: 'me-time', type: 'time', value: pick(aiM?.time, match.time),
       }), false))),
     field('场地', el('input', {
-      id: 'me-venue', value: match.venue || '', placeholder: '如：西操场 1 号场',
+      id: 'me-venue', value: pick(aiM?.venue, match.venue), placeholder: '如：西操场 1 号场',
     }), false),
     el('div', { class: 'grid cols-2 me-grid' },
       field('主裁判', el('input', {
@@ -174,7 +174,7 @@ function buildForm(event, state, redraw) {
       }), false)),
     field('特殊情况说明', el('textarea', {
       id: 'me-note', rows: 2, placeholder: '如：比赛延期/中断/补时/申诉等',
-    }, match.specialNote || ''), false),
+    }, pick(aiM?.specialNote, match.specialNote)), false),
   ];
   if (!isLeague && !isKnockout) {
     infoRows.unshift(field('小组', el('select', { id: 'me-group' },
@@ -213,8 +213,14 @@ function buildForm(event, state, redraw) {
   const existingGoalsB = aiM ? normGoals(aiM.goals, 'B') : normGoals(match.goals, 'B');
   const existingSubs = aiM ? normSubs(aiM.substitutions) : normSubs(match.substitutions);
   const existingCards = aiM ? normCards(aiM.cards) : normCards(match.cards);
-  const initScoreA = aiM ? aiM.scoreA : (match.status === 'finished' ? match.scoreA : '');
-  const initScoreB = aiM ? aiM.scoreB : (match.status === 'finished' ? match.scoreB : '');
+  // 进球行数取「比分」与「识别到的进球条数」的较大值：
+  // 两者对不上时也不会把多出来的进球记录藏起来，交给操作人核对后删改。
+  const initScoreA = aiM
+    ? Math.max(Number(aiM.scoreA) || 0, existingGoalsA.length)
+    : (match.status === 'finished' ? match.scoreA : '');
+  const initScoreB = aiM
+    ? Math.max(Number(aiM.scoreB) || 0, existingGoalsB.length)
+    : (match.status === 'finished' ? match.scoreB : '');
 
   const goalsA = el('div', { id: 'me-goals-a' });
   const goalsB = el('div', { id: 'me-goals-b' });
@@ -290,7 +296,7 @@ function buildForm(event, state, redraw) {
   // ---- ③ 工作人员 ----
   const staffRows = STAFF_FIELDS.map(([key, labelText]) => field(labelText, el('input', {
     id: `me-staff-${key}`,
-    value: match.matchStaff?.[key] || '',
+    value: pick(aiM?.staff?.[key], match.matchStaff?.[key]),
     placeholder: staffPlaceholder(key, labelText),
   }), false));
 

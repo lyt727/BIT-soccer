@@ -572,6 +572,14 @@ check('AI 识别完整裁判报告（名单/号码/颜色）',
   ai.data?.match?.lineups?.A?.starting?.length > 0
   && ai.data?.match?.lineups?.A?.starting?.[0]?.no
   && ai.data?.match?.kitColorA);
+check('AI 结果带回比赛信息（日期/时间/场地）',
+  ['date', 'time', 'venue'].every((k) => k in (ai.data?.match || {})),
+  JSON.stringify([ai.data?.match?.date, ai.data?.match?.time, ai.data?.match?.venue]));
+check('AI 结果带回工作人员（比赛监督/拍照/录像/解说/战报）',
+  ai.data?.match?.staff
+  && ['supervisor', 'photographer', 'videographer', 'commentator', 'reporter']
+    .every((k) => typeof ai.data.match.staff[k] === 'string'));
+check('AI 结果带回特殊情况说明字段', 'specialNote' in (ai.data?.match || {}));
 
 // AI 结果一键回填：名单/颜色与时间轴事件全部落库
 const aim = ai.data?.match;

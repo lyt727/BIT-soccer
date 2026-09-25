@@ -736,15 +736,15 @@ function resultPreviewCard(res, low) {
   const goalLine = (arr, sideName) => el('div', {},
     el('b', { class: 'small' }, `${sideName}进球（${arr.length}）`),
     arr.length ? el('div', {}, arr.map((g) => el('div', { class: 'small' },
-      `⚽ ${g.no ? `${g.no}号 ` : ''}${g.player}${g.time ? ` ${g.time}` : ''}${g.penalty ? '（点球）' : ''}`)))
+      `⚽ ${g.no ? `${g.no}号 ` : ''}${g.player || '未登记（请核对）'}${g.time ? ` ${g.time}` : ''}${g.penalty ? '（点球）' : ''}`)))
       : el('div', { class: 'small muted' }, '无'));
   const subs = (m.substitutions || []).length
     ? (m.substitutions || []).map((s) => el('div', { class: 'small' },
-      `🔄 ${s.team} ${s.offNo ? `${s.offNo}号 ` : ''}${s.offPlayer} ↓ ${s.onNo ? `${s.onNo}号 ` : ''}${s.onPlayer} ↑${s.time ? ` ${s.time}` : ''}`))
+      `🔄 ${s.team} ${s.offNo ? `${s.offNo}号 ` : ''}${s.offPlayer || '（未识别）'} ↓ ${s.onNo ? `${s.onNo}号 ` : ''}${s.onPlayer || '（未识别）'} ↑${s.time ? ` ${s.time}` : ''}`))
     : el('div', { class: 'small muted' }, '无');
   const cards = (m.cards || []).length
     ? (m.cards || []).map((c) => el('div', { class: 'small' },
-      `${c.type === 'red' ? '🟥' : '🟨'} ${c.team} ${c.no ? `${c.no}号 ` : ''}${c.player}${c.time ? ` ${c.time}` : ''}`))
+      `${c.type === 'red' ? '🟥' : '🟨'} ${c.team} ${c.no ? `${c.no}号 ` : ''}${c.player || '未登记（请核对）'}${c.time ? ` ${c.time}` : ''}`))
     : el('div', { class: 'small muted' }, '无');
   const block = el('div', { class: 'card mt8' },
     el('b', {}, '识别结果（可在下一步表单中修改）'),
@@ -753,7 +753,11 @@ function resultPreviewCard(res, low) {
       el('dt', {}, '名单'), el('dd', {},
         el('div', {}, lineupBlock(m.registrationA?.name, m.lineups?.A)),
         el('div', {}, lineupBlock(m.registrationB?.name, m.lineups?.B))),
+      el('dt', {}, '比赛信息'), el('dd', {}, matchInfoText(m)),
       el('dt', {}, '裁判组'), el('dd', {}, refereeRolesText(m.referees)),
+      el('dt', {}, '工作人员'), el('dd', {}, staffRolesText(m.staff)),
+      m.specialNote ? el('dt', {}, '特殊情况') : null,
+      m.specialNote ? el('dd', {}, m.specialNote) : null,
       el('dt', {}, '进球'), el('dd', {}, goalLine(goalsA, '主队')),
       el('dt', {}, ''), el('dd', {}, goalLine(goalsB, '客队')),
       el('dt', {}, '换人'), el('dd', {}, subs),
@@ -770,6 +774,22 @@ function refereeRolesText(r) {
     r?.fourth ? ['第四官员', r.fourth] : null,
   ].filter(Boolean);
   return roles.length ? roles.map(([k, v]) => `${k} ${v}`).join(' / ') : '未识别';
+}
+
+// 比赛信息：日期 / 开球时间 / 场地（报告上没写就显示未识别，别让操作人以为是系统漏填）
+function matchInfoText(m) {
+  const parts = [m?.date, m?.time, m?.venue].filter(Boolean);
+  return parts.length ? parts.join(' · ') : '未识别';
+}
+
+const AI_STAFF_LABELS = [
+  ['supervisor', '比赛监督'], ['photographer', '拍照'], ['videographer', '录像'],
+  ['commentator', '解说'], ['reporter', '战报'],
+];
+
+function staffRolesText(s) {
+  const parts = AI_STAFF_LABELS.filter(([k]) => s?.[k]).map(([k, label]) => `${label} ${s[k]}`);
+  return parts.length ? parts.join(' / ') : '未识别';
 }
 
 function drawSampleScorecard() {
