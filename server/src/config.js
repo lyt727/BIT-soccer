@@ -28,9 +28,11 @@ export const config = {
   //   OpenAI gpt-4o / 阿里云百炼 qwen-vl-max / 智谱 GLM-4V / MiniMax
   // ---------------------------------------------------------------
   aiProvider: process.env.AI_PROVIDER || 'auto',      // auto | demo | vision
-  aiVisionBaseUrl: process.env.AI_VISION_BASE_URL || 'https://api.openai.com/v1',
+  // 默认指向阿里云百炼（OpenAI 兼容模式）；换厂商只需改环境变量
+  aiVisionBaseUrl: process.env.AI_VISION_BASE_URL
+    || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   aiVisionApiKey: process.env.AI_VISION_API_KEY || '',
-  aiVisionModel: process.env.AI_VISION_MODEL || 'gpt-4o',
+  aiVisionModel: process.env.AI_VISION_MODEL || 'qwen-vl-max',
   aiMaxUploadBytes: Number(process.env.AI_MAX_UPLOAD_BYTES || 12 * 1024 * 1024),
   aiSimulateDelayMs: Number(process.env.AI_SIMULATE_DELAY_MS || 1600),
 
