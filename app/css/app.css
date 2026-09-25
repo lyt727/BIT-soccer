@@ -542,3 +542,124 @@ td:last-child, th:last-child { padding-right: 14px; }
     row-gap: 6px;
   }
 }
+
+/* ============================================================
+   比赛编辑统一界面（.match-editor）
+   —— 只调整字号、间距与层次，不改字段与交互。
+      字号统一为四档：15 分组标题 / 14 正文与输入 / 13 字段名 / 12 提示
+   ============================================================ */
+.match-editor {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text);
+}
+.match-editor input,
+.match-editor select,
+.match-editor textarea { font-size: 14px; }
+
+/* 分组标题：一、比赛信息 / 二、比赛数据 / 三、工作人员 */
+.match-editor .section-title.lv1 {
+  display: block;
+  margin: 0 0 2px;
+  padding: 16px 0 8px;
+  border-top: 1px solid var(--line);
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  letter-spacing: .2px;
+}
+.match-editor .section-title.lv1:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+/* 小节标题：比赛服颜色与名单 / 进球球员 / 换人记录 / 红黄牌记录 */
+.match-editor .section-title.lv2 {
+  display: block;
+  margin: 16px 0 2px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #4a5b52;
+  letter-spacing: .2px;
+}
+.match-editor .me-subhead { margin-top: 16px; }
+.match-editor .me-subhead .section-title.lv2 { margin: 0; }
+
+/* 字段：标签 13px，控件 14px，纵向间距统一由标签外边距控制 */
+.match-editor label.field { margin: 8px 0 0; font-size: 13px; color: var(--muted); }
+.match-editor label.field > span {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.match-editor .grid.me-grid { gap: 0 10px; }
+
+/* 比分区：整块浅绿面板，数字放大，两侧标签与其它字段同为 13px */
+.match-editor .match-editor-score {
+  margin: 4px 0 0;
+  padding: 12px 12px 10px;
+  background: linear-gradient(180deg, #f7fcf9, #eef7f2);
+  border: 1px solid #d9ece2;
+  border-radius: 14px;
+}
+.match-editor .match-editor-score .small {
+  margin-bottom: 3px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.match-editor .match-editor-score input {
+  padding: 6px 8px;
+  border-color: #cfe6da;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+.match-editor .match-editor-score .vs { font-size: 13px; font-weight: 600; }
+
+/* 提示文字 */
+.match-editor .me-hint { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.match-editor .me-hint.center { text-align: center; }
+.match-editor .me-note { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+
+/* 事件行（进球 / 换人 / 红黄牌）：所有小格字号与内边距一致 */
+.match-editor .result-edit-row input,
+.match-editor .result-edit-row select { padding: 8px 10px; }
+.match-editor .result-edit-row .num {
+  padding: 8px 4px;
+  text-align: center;
+  font-size: 13px;
+}
+.match-editor .result-edit-row .me-check {
+  flex: none;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.match-editor .result-edit-row .icon-btn {
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  border-radius: 9px;
+  font-size: 15px;
+  color: #9aaba2;
+}
+.match-editor .result-edit-row .icon-btn:hover { background: #fdeceb; color: #c0392b; }
+
+/* 球队下拉：队名较长（如「信息与电子学院一队」），给足宽度；
+   手机上独占一行，避免两名队员同院校队名被截断成一样 */
+.match-editor .result-edit-row .s-team,
+.match-editor .result-edit-row .c-team { flex: 0 1 128px; min-width: 104px; }
+
+/* 名单输入框：行高统一，长名单更好读 */
+.match-editor textarea { line-height: 1.6; }
+
+/* 手机端：两列退成一列 */
+@media (max-width: 719px) {
+  .match-editor .grid.cols-2 { grid-template-columns: 1fr; }
+  .match-editor .section-title.lv1 { font-size: 15px; }
+  .match-editor .result-edit-row .s-team,
+  .match-editor .result-edit-row .c-team { flex: 1 1 100%; min-width: 0; }
+}
