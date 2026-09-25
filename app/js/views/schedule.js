@@ -135,8 +135,9 @@ function openMatchStats(m, event) {
       lineup?.starting?.length ? badge(`${lineup.starting.length} 首发`, 'approved') : null),
     el('div', { class: 'section-title', style: { margin: '10px 0 4px' } }, '首发'),
     lineup?.starting?.length
-      ? el('ol', { style: { margin: '0', paddingLeft: '20px', fontSize: '13px' } },
-        lineup.starting.map((p) => el('li', {}, p.no ? `${p.no} 号 ${p.name}` : p.name)))
+      // 只显示号码与姓名，不用 1、2、3… 的列表序号（号码本身已经足够定位球员）
+      ? el('div', { class: 'small', style: { lineHeight: '1.9' } },
+        lineup.starting.map((p) => el('div', {}, p.no ? `${p.no} 号 ${p.name}` : p.name)))
       : el('div', { class: 'small muted' }, '尚未录入'),
     el('div', { class: 'section-title', style: { margin: '10px 0 4px' } }, '替补'),
     lineup?.substitutes?.length

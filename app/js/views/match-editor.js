@@ -132,6 +132,20 @@ function buildForm(event, state, redraw) {
   const currentB = { id: match.teamB.registrationId, teamName: match.teamB.name };
   const selA = teamSel('me-team-a', currentA);
   const selB = teamSel('me-team-b', currentB);
+  // 换人/红黄牌的「球队」直接取当前主客队，做成下拉，省去手打队名
+  const teamNamesNow = () => {
+    const names = [];
+    for (const sel of [selA, selB]) {
+      const name = selectedTextOf(sel);
+      if (name && !names.includes(name)) names.push(name);
+    }
+    if (!names.length) {
+      for (const n of [match.teamA.name, match.teamB.name]) {
+        if (n && !names.includes(n)) names.push(n);
+      }
+    }
+    return names;
+  };
 
   const infoRows = [
     el('div', { class: 'grid cols-2', style: { gap: '8px' } }, field('主队', selA), field('客队', selB)),
@@ -217,8 +231,19 @@ function buildForm(event, state, redraw) {
 
   const subsBox = el('div', { id: 'me-subs' });
   const cardsBox = el('div', { id: 'me-cards' });
-  existingSubs.forEach((s) => addSubRow(subsBox, s));
-  existingCards.forEach((c) => addCardRow(cardsBox, c));
+  existingSubs.forEach((s) => addSubRow(subsBox, s, teamNamesNow));
+  existingCards.forEach((c) => addCardRow(cardsBox, c, teamNamesNow));
+  // 改了主客队，已有行里的球队下拉同步刷新
+  const syncRowTeams = () => {
+    const names = teamNamesNow();
+    const rows = [
+      ...subsBox.querySelectorAll('.s-team'),
+      ...cardsBox.querySelectorAll('.c-team'),
+    ];
+    for (const sel of rows) fillTeamSelect(sel, names);
+  };
+  selA.addEventListener('change', syncRowTeams);
+  selB.addEventListener('change', syncRowTeams);
 
   const dataRows = [
     el('div', { class: 'score-inputs' },
@@ -249,13 +274,15 @@ function buildForm(event, state, redraw) {
     el('div', { class: 'row between mt12' },
       el('div', { class: 'section-title', style: { margin: 0 } }, '换人记录'),
       el('button', {
-        class: 'btn sm outline', type: 'button', onclick: () => addSubRow(subsBox),
+        class: 'btn sm outline', type: 'button',
+        onclick: () => addSubRow(subsBox, {}, teamNamesNow),
       }, '＋ 添加')),
     subsBox,
     el('div', { class: 'row between mt12' },
       el('div', { class: 'section-title', style: { margin: 0 } }, '红黄牌记录'),
       el('button', {
-        class: 'btn sm outline', type: 'button', onclick: () => addCardRow(cardsBox),
+        class: 'btn sm outline', type: 'button',
+        onclick: () => addCardRow(cardsBox, {}, teamNamesNow),
       }, '＋ 添加')),
     cardsBox,
   ];
@@ -342,35 +369,88 @@ function renderGoalRows(box, side, count, rows = []) {
   }
 }
 
-function addSubRow(box, init = {}) {
-  const row = el('div', {
-    class: 'sub-row result-edit-row',
-    style: { gridTemplateColumns: '76px 1fr 52px 1fr 52px 74px auto' },
-  },
-  el('input', { class: 's-team', placeholder: '球队', value: init.team || '' }),
-  el('input', { class: 's-off', placeholder: '下场球员', value: init.offPlayer || '' }),
-  el('input', { class: 's-offNo', placeholder: '号', value: init.offNo || '' }),
-  el('input', { class: 's-on', placeholder: '上场球员', value: init.onPlayer || '' }),
-  el('input', { class: 's-onNo', placeholder: '号', value: init.onNo || '' }),
-  el('input', { class: 's-time', placeholder: "46'", value: init.time || '' }),
-  el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
+// 换人 / 红黄牌事件行：字段较多，用可换行的弹性行，窄屏自动折成两行，
+// 避免在一行里被挤扁或横向溢出。
+const EVENT_ROW_STYLE = {
+  display: 'flex', flexWrap: 'wrap', gap: '6px', alignItems: 'center',
+  marginBottom: '6px',
+};
+const TEAM_SEL_STYLE = { flex: '0 1 128px', minWidth: '104px' };
+
+function addSubRow(box, init = {}, teamNames = () => []) {
+  const row = el('div', { class: 'sub-row result-edit-row', style: EVENT_ROW_STYLE },
+    teamSelectBox('s-team', init.team, teamNames),
+    el('input', {
+      class: 's-off', placeholder: '下场球员', value: init.offPlayer || '',
+      style: { flex: '1 1 104px', minWidth: '0' },
+    }),
+    el('input', {
+      class: 's-offNo', placeholder: '号', value: init.offNo || '',
+      style: { flex: '0 0 52px' },
+    }),
+    el('input', {
+      class: 's-on', placeholder: '上场球员', value: init.onPlayer || '',
+      style: { flex: '1 1 104px', minWidth: '0' },
+    }),
+    el('input', {
+      class: 's-onNo', placeholder: '号', value: init.onNo || '',
+      style: { flex: '0 0 52px' },
+    }),
+    el('input', {
+      class: 's-time', placeholder: "46'", value: init.time || '',
+      style: { flex: '0 0 68px' },
+    }),
+    el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
   box.append(row);
 }
 
-function addCardRow(box, init = {}) {
-  const row = el('div', {
-    class: 'card-row result-edit-row',
-    style: { gridTemplateColumns: '1fr 1fr 60px 100px 74px auto' },
-  },
-  el('input', { class: 'c-team', placeholder: '球队', value: init.team || '' }),
-  el('input', { class: 'c-player', placeholder: '球员', value: init.player || '' }),
-  el('input', { class: 'c-no', placeholder: '号', value: init.no || '' }),
-  el('select', { class: 'c-type' },
-    el('option', { value: 'yellow', selected: init.type !== 'red' }, '黄牌'),
-    el('option', { value: 'red', selected: init.type === 'red' }, '红牌')),
-  el('input', { class: 'c-time', placeholder: "33'", value: init.time || '' }),
-  el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
+function addCardRow(box, init = {}, teamNames = () => []) {
+  const row = el('div', { class: 'card-row result-edit-row', style: EVENT_ROW_STYLE },
+    teamSelectBox('c-team', init.team, teamNames),
+    el('input', {
+      class: 'c-player', placeholder: '球员', value: init.player || '',
+      style: { flex: '1 1 104px', minWidth: '0' },
+    }),
+    el('input', {
+      class: 'c-no', placeholder: '号', value: init.no || '',
+      style: { flex: '0 0 52px' },
+    }),
+    el('select', { class: 'c-type', style: { flex: '0 0 88px' } },
+      el('option', { value: 'yellow', selected: init.type !== 'red' }, '黄牌'),
+      el('option', { value: 'red', selected: init.type === 'red' }, '红牌')),
+    el('input', {
+      class: 'c-time', placeholder: "33'", value: init.time || '',
+      style: { flex: '0 0 68px' },
+    }),
+    el('button', { class: 'icon-btn', type: 'button', html: '✕', onclick: () => row.remove() }));
   box.append(row);
+}
+
+// 球队下拉：选项来自当前的主队 / 客队
+function teamSelectBox(cls, value, teamNames) {
+  const sel = el('select', { class: cls, style: TEAM_SEL_STYLE });
+  fillTeamSelect(sel, teamNames(), value);
+  return sel;
+}
+
+// 用给定的球队名重建下拉；已有取值若不在列表里则保留，避免误改已录入的数据
+function fillTeamSelect(sel, names, preset = null) {
+  const current = (preset === null || preset === undefined) ? sel.value : preset;
+  const all = [...names];
+  if (current && !all.includes(current)) all.push(current);
+  if (!all.length) all.push('');
+  clear(sel);
+  for (const n of all) {
+    sel.append(el('option', { value: n, selected: current ? current === n : n === all[0] }, n || '选择球队'));
+  }
+  sel.value = current || all[0];
+}
+
+function selectedTextOf(sel) {
+  if (!sel) return '';
+  const opts = sel.options ? [...sel.options] : [];
+  const opt = sel.selectedIndex >= 0 ? opts[sel.selectedIndex] : opts[0];
+  return String((opt && opt.textContent) || sel.value || '').trim();
 }
 
 // ---------------- 读取表单 ----------------
