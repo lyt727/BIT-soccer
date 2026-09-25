@@ -862,7 +862,7 @@ function aiUploadBody(state, modal) {
   const thumbs = el('div', { class: 'thumb-grid' });
   const zone = el('div', { class: 'dropzone' },
     el('div', { style: { fontSize: '17px' } }, '📷 点击上传裁判报告照片'),
-    el('div', { class: 'small' }, '可多选，JPG/PNG，最多 6 张'));
+      el('div', { class: 'small' }, '可多选，JPG/PNG，最多 3 张'));
   zone.addEventListener('click', () => input.click());
   input.addEventListener('change', async () => {
     for (const file of [...input.files]) {

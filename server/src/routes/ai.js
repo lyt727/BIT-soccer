@@ -35,7 +35,9 @@ export function registerAiRoutes(router) {
     const images = Array.isArray(body.images) ? body.images : [];
     if (!images.length) throw badRequest('请至少选择 1 张比赛记录图片');
     const checked = [];
-    for (const img of images.slice(0, 6)) {
+    // 裁判报告一般两页 A4，一次最多 3 张
+    if (images.length > 3) throw badRequest('一次最多上传 3 张图片');
+    for (const img of images.slice(0, 3)) {
       const info = imageType(img.dataUrl);
       if (!info) {
         throw badRequest('图片格式仅支持 JPG/PNG，且单张不超过 12MB');
