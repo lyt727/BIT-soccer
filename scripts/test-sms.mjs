@@ -4,6 +4,7 @@
 // 用法：
 //   node scripts/test-sms.mjs                检查配置 + 演练请求（都不发短信、不走网络）
 //   node scripts/test-sms.mjs 13800000000    真发一条到指定手机号
+//   node scripts/test-sms.mjs --list         列出这把 AccessKey 账号下的签名与模板
 //   服务器上：bash scripts/run.sh sms [手机号]
 //
 // 只发短信、不碰数据库，可以放心对线上跑。
@@ -11,10 +12,47 @@
 import crypto from 'node:crypto';
 // config.js 会自己先加载仓库根目录的 .env，这里直接读到的就是真实配置
 import { config } from '../server/src/config.js';
-import { resolveSmsProvider, sendSmsCode } from '../server/src/services/sms.js';
+import { resolveSmsProvider, sendSmsCode, listAliyunSmsResources } from '../server/src/services/sms.js';
 
 const phone = String(process.argv[2] || '').trim();
 const provider = resolveSmsProvider();
+
+// --list：把这把 AccessKey 所在的账号里有哪些签名/模板列出来
+if (phone === '--list') {
+  if (provider !== 'aliyun') {
+    console.log(`当前通道是 ${provider}，只有阿里云支持这个查询。`);
+    process.exit(0);
+  }
+  console.log('正在查询这把 AccessKey 账号下的签名与模板……\n');
+  try {
+    const res = await listAliyunSmsResources();
+    console.log(`签名（共 ${res.signs.length} 个）：`);
+    if (!res.signs.length) console.log('  （一个都没有）');
+    for (const s of res.signs) console.log(`  · ${s.name}  ${s.status}${s.reason ? `  ${s.reason}` : ''}`);
+    console.log(`\n模板（共 ${res.templates.length} 个）：`);
+    if (!res.templates.length) console.log('  （一个都没有）');
+    for (const t of res.templates) {
+      console.log(`  · ${t.code}  ${t.name}  ${t.status}`);
+      if (t.content) console.log(`      内容：${t.content}`);
+    }
+    console.log('');
+    const wantSign = config.aliyunSms.signName;
+    const wantTpl = config.aliyunSms.templateCode;
+    const hasSign = res.signs.some((s) => s.name === wantSign);
+    const hasTpl = res.templates.some((t) => t.code === wantTpl);
+    console.log(`对照你配置的：签名「${wantSign}」${hasSign ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
+    console.log(`              模板「${wantTpl}」${hasTpl ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
+    if (!hasSign || !hasTpl) {
+      console.log('\n说明：控制台能用的签名/模板，API 用的 AccessKey 必须属于同一个阿里云账号。');
+      console.log('     不在此账号时，请换用该账号下的 AccessKey，或到该账号里申请同名签名/模板。');
+      process.exit(1);
+    }
+  } catch (err) {
+    console.error(`查询失败：${err.message}`);
+    process.exit(1);
+  }
+  process.exit(0);
+}
 
 console.log('短信配置自检');
 console.log(`  通道（SMS_MODE / SMS_PROVIDER）  ${provider}`);
@@ -151,5 +189,25 @@ try {
   console.error('  · TEMPLATE_VARS 与「模板内容」里的变量对不上（本系统按配置逐个传）');
   console.error('  · 没买套餐包或余额不足 → 控制台充值 / 购买套餐');
   console.error('  · 手机号不在测试签名的白名单里，或当天发送次数超限');
+  if (provider === 'aliyun') {
+    console.error('');
+    console.error('【自动排查】这把 AccessKey 账号下的签名与模板：');
+    try {
+      const res = await listAliyunSmsResources();
+      const list = (arr, fmt) => (arr.length ? arr.map(fmt).join('、') : '（一个都没有）');
+      console.error(`  签名：${list(res.signs, (s) => `${s.name}(${s.status})`)}`);
+      console.error(`  模板：${list(res.templates, (t) => `${t.code}(${t.status})`)}`);
+      const hasSign = res.signs.some((s) => s.name === config.aliyunSms.signName);
+      const hasTpl = res.templates.some((t) => t.code === config.aliyunSms.templateCode);
+      console.error(`  你配置的签名「${config.aliyunSms.signName}」${hasSign ? '在' : '不在'}这个账号；`
+        + `模板「${config.aliyunSms.templateCode}」${hasTpl ? '在' : '不在'}这个账号`);
+      if (!hasSign || !hasTpl) {
+        console.error('  → 基本可以确定：这把 AccessKey 与控制台里看到那个模板的账号不是同一个，');
+        console.error('     换用该账号下的 AccessKey 即可（控制台右上角可切换账号查看 UID）。');
+      }
+    } catch (e2) {
+      console.error(`  （查询失败：${e2.message}）`);
+    }
+  }
   process.exit(1);
 }

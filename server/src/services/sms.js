@@ -121,10 +121,64 @@ function aliyunHint(code, message) {
   return '';
 }
 
+// 阿里云短信走的是 RPC 风格接口：所有 Action 共用一套签名（GET + HMAC-SHA1）
+async function aliyunRpc(action, actionParams = {}) {
+  const { accessKeyId, accessKeySecret, regionId } = config.aliyunSms;
+  if (!accessKeyId || !accessKeySecret) {
+    throw smsError('阿里云短信配置不完整，请检查 ALIYUN_SMS_ACCESS_KEY_ID / ALIYUN_SMS_ACCESS_KEY_SECRET');
+  }
+  const params = {
+    AccessKeyId: accessKeyId,
+    Action: action,
+    Format: 'JSON',
+    RegionId: regionId,
+    SignatureMethod: 'HMAC-SHA1',
+    SignatureNonce: crypto.randomUUID(),
+    SignatureVersion: '1.0',
+    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    Version: '2017-05-25',
+    ...actionParams,
+  };
+  const query = Object.keys(params).sort()
+    .map((k) => `${aliEncode(k)}=${aliEncode(params[k])}`).join('&');
+  const stringToSign = `GET&%2F&${aliEncode(query)}`;
+  const signature = crypto.createHmac('sha1', `${accessKeySecret}&`)
+    .update(stringToSign).digest('base64');
+  const url = `https://dysmsapi.aliyuncs.com/?Signature=${aliEncode(signature)}&${query}`;
+  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || data?.Code !== 'OK') {
+    const head = action === 'SendSms' ? '阿里云短信发送失败' : `阿里云接口 ${action} 调用失败`;
+    const err = smsError(`${head}（${data?.Code || res.status}）：`
+      + `${data?.Message || ''}${aliyunHint(data?.Code, data?.Message)}`);
+    err.aliyun = data;
+    throw err;
+  }
+  return data;
+}
+
+// 查这把 AccessKey 所在的账号里到底有哪些签名和模板。
+// 「该账号下找不到对应模板」这类问题，一看这个列表就清楚：
+// 列表里没有你配置的那个 → 说明这把 Key 和控制台里那个账号不是同一个。
+export async function listAliyunSmsResources() {
+  const signData = await aliyunRpc('QuerySmsSignList', { PageIndex: 1, PageSize: 50 });
+  const tplData = await aliyunRpc('QuerySmsTemplateList', { PageIndex: 1, PageSize: 50 });
+  const statusText = (v) => ({ 0: '审核中', 1: '审核通过', 2: '审核失败' }[Number(v)] || `状态${v}`);
+  return {
+    signs: (signData.SmsSignList || []).map((s) => ({
+      name: s.SignName, status: statusText(s.SignStatus), reason: s.Reason || '',
+    })),
+    templates: (tplData.SmsTemplateList || []).map((t) => ({
+      code: t.TemplateCode, name: t.TemplateName, status: statusText(t.TemplateStatus),
+      content: t.TemplateContent || '', reason: t.Reason || '',
+    })),
+  };
+}
+
 async function sendAliyun(phone, code) {
-  const { accessKeyId, accessKeySecret, signName, templateCode, regionId } = config.aliyunSms;
-  if (!accessKeyId || !accessKeySecret || !signName || !templateCode) {
-    throw smsError('阿里云短信配置不完整，请检查 ALIYUN_SMS_* 环境变量');
+  const { signName, templateCode } = config.aliyunSms;
+  if (!signName || !templateCode) {
+    throw smsError('阿里云短信配置不完整，请检查 ALIYUN_SMS_SIGN_NAME / ALIYUN_SMS_TEMPLATE_CODE');
   }
   // 模板参数必须和模板内容里的变量一一对应，多一个少一个阿里云都会报参数不合法。
   // 变量清单由 ALIYUN_SMS_TEMPLATE_VARS 配置（默认 code,min，对应赠送的登录/注册模板）。
@@ -139,34 +193,12 @@ async function sendAliyun(phone, code) {
     else if (['min', 'mins', 'minute', 'minutes'].includes(name)) templateParam[name] = minutes;
     // 其它未知变量无法提供值：交给阿里云在返回里报错，比悄悄发一条内容不对的短信好
   }
-  const params = {
-    AccessKeyId: accessKeyId,
-    Action: 'SendSms',
-    Format: 'JSON',
+  return aliyunRpc('SendSms', {
     PhoneNumbers: phone,
-    RegionId: regionId,
     SignName: signName,
-    SignatureMethod: 'HMAC-SHA1',
-    SignatureNonce: crypto.randomUUID(),
-    SignatureVersion: '1.0',
     TemplateCode: templateCode,
     TemplateParam: JSON.stringify(templateParam),
-    Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    Version: '2017-05-25',
-  };
-  const query = Object.keys(params).sort()
-    .map((k) => `${aliEncode(k)}=${aliEncode(params[k])}`).join('&');
-  const stringToSign = `GET&%2F&${aliEncode(query)}`;
-  const signature = crypto.createHmac('sha1', `${accessKeySecret}&`)
-    .update(stringToSign).digest('base64');
-  const url = `https://dysmsapi.aliyuncs.com/?Signature=${aliEncode(signature)}&${query}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.Code !== 'OK') {
-    throw smsError(`阿里云短信发送失败（${data?.Code || res.status}）：`
-      + `${data?.Message || ''}${aliyunHint(data?.Code, data?.Message)}`);
-  }
-  return { provider: 'aliyun', requestId: data?.RequestId || '' };
+  }).then((data) => ({ provider: 'aliyun', requestId: data?.RequestId || '' }));
 }
 
 // ---------------- 自建/第三方 webhook ----------------
