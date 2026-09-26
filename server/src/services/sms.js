@@ -125,7 +125,11 @@ function aliyunHint(code, message) {
 // 注意必须用 POST：阿里云这边接口只接受 POST，用 GET 调查询类接口会返回
 // UnsupportedHTTPMethod。参数放在表单体里，签名算法是 HMAC-SHA1，
 // 待签字符串为 POST&%2F&<再次编码后的规范化参数串>。
-async function aliyunRpc(action, actionParams = {}) {
+async function aliyunRpc(action, actionParams = {}, {
+  endpoint = 'https://dysmsapi.aliyuncs.com/',
+  version = '2017-05-25',
+  smsHint = true,
+} = {}) {
   const { accessKeyId, accessKeySecret, regionId } = config.aliyunSms;
   if (!accessKeyId || !accessKeySecret) {
     throw smsError('阿里云短信配置不完整，请检查 ALIYUN_SMS_ACCESS_KEY_ID / ALIYUN_SMS_ACCESS_KEY_SECRET');
@@ -134,20 +138,21 @@ async function aliyunRpc(action, actionParams = {}) {
     AccessKeyId: accessKeyId,
     Action: action,
     Format: 'JSON',
-    RegionId: regionId,
     SignatureMethod: 'HMAC-SHA1',
     SignatureNonce: crypto.randomUUID(),
     SignatureVersion: '1.0',
     Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
-    Version: '2017-05-25',
+    Version: version,
     ...actionParams,
   };
+  // 短信接口才有 RegionId 这个参数，STS 没有
+  if (smsHint) params.RegionId = regionId;
   const query = Object.keys(params).sort()
     .map((k) => `${aliEncode(k)}=${aliEncode(params[k])}`).join('&');
   const stringToSign = `POST&%2F&${aliEncode(query)}`;
   const signature = crypto.createHmac('sha1', `${accessKeySecret}&`)
     .update(stringToSign).digest('base64');
-  const res = await fetch('https://dysmsapi.aliyuncs.com/', {
+  const res = await fetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: `Signature=${aliEncode(signature)}&${query}`,
@@ -157,11 +162,29 @@ async function aliyunRpc(action, actionParams = {}) {
   if (!res.ok || data?.Code !== 'OK') {
     const head = action === 'SendSms' ? '阿里云短信发送失败' : `阿里云接口 ${action} 调用失败`;
     const err = smsError(`${head}（${data?.Code || res.status}）：`
-      + `${data?.Message || ''}${aliyunHint(data?.Code, data?.Message)}`);
+      + `${data?.Message || ''}${smsHint ? aliyunHint(data?.Code, data?.Message) : ''}`);
     err.aliyun = data;
     throw err;
   }
   return data;
+}
+
+// 这把 AccessKey 到底是"哪个账号的谁"。用于核对：
+// 控制台里能看到赠送模板的那个账号，和 API 用的这个 Key，是不是同一个账号。
+// 用的是 STS 的 GetCallerIdentity —— 任何有效凭证都能调用，只读、不产生费用。
+export async function describeAliyunIdentity() {
+  const data = await aliyunRpc('GetCallerIdentity', {}, {
+    endpoint: 'https://sts.aliyuncs.com/',
+    version: '2015-04-01',
+    smsHint: false,
+  });
+  const arn = String(data.Arn || '');
+  return {
+    accountId: String(data.AccountId || ''),
+    userId: String(data.UserId || ''),
+    arn,
+    isRamUser: arn.includes(':user/'),
+  };
 }
 
 // 查这把 AccessKey 所在的账号里到底有哪些签名和模板。

@@ -12,7 +12,9 @@
 import crypto from 'node:crypto';
 // config.js 会自己先加载仓库根目录的 .env，这里直接读到的就是真实配置
 import { config } from '../server/src/config.js';
-import { resolveSmsProvider, sendSmsCode, listAliyunSmsResources } from '../server/src/services/sms.js';
+import {
+  resolveSmsProvider, sendSmsCode, listAliyunSmsResources, describeAliyunIdentity,
+} from '../server/src/services/sms.js';
 
 const phone = String(process.argv[2] || '').trim();
 const provider = resolveSmsProvider();
@@ -24,6 +26,18 @@ if (phone === '--list') {
     process.exit(0);
   }
   console.log('正在查询这把 AccessKey 账号下的签名与模板……\n');
+  // 先确认这把 Key 属于哪个账号、哪个身份
+  try {
+    const id = await describeAliyunIdentity();
+    console.log('这把 AccessKey 的身份：');
+    console.log(`  账号 UID（AccountId） = ${id.accountId}`);
+    console.log(`  身份类型              = ${id.isRamUser ? 'RAM 子用户' : '主账号'}`);
+    console.log(`  ARN                   = ${id.arn}`);
+    console.log('  → 请到「能看到赠送模板的那个控制台账号」右上角看账号 UID，和上面这个比对；');
+    console.log('    不一致就说明这把 Key 不是那个账号的。\n');
+  } catch (err) {
+    console.log(`（身份查询失败：${err.message}）\n`);
+  }
   try {
     const res = await listAliyunSmsResources();
     console.log(`签名（共 ${res.signs.length} 个）：`);
@@ -43,8 +57,12 @@ if (phone === '--list') {
     console.log(`对照你配置的：签名「${wantSign}」${hasSign ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
     console.log(`              模板「${wantTpl}」${hasTpl ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
     if (!hasSign || !hasTpl) {
-      console.log('\n说明：控制台能用的签名/模板，API 用的 AccessKey 必须属于同一个阿里云账号。');
-      console.log('     不在此账号时，请换用该账号下的 AccessKey，或到该账号里申请同名签名/模板。');
+      console.log('\n两种可能，按顺序排除：');
+      console.log('  1) 这把 Key 和控制台里看到赠送模板的账号不是同一个');
+      console.log('     → 比对上面的「账号 UID」和控制台右上角显示的账号 ID，不一致就换 Key');
+      console.log('  2) 账号是对的，但赠送签名/模板不通过这个查询接口返回');
+      console.log('     → 此时以实际发送结果为准：能发出去就说明没问题');
+      console.log('     先跑一条真实发送：node scripts/test-sms.mjs 你的手机号');
       process.exit(1);
     }
   } catch (err) {
@@ -198,6 +216,8 @@ try {
     console.error('');
     console.error('【自动排查】这把 AccessKey 账号下的签名与模板：');
     try {
+      const id = await describeAliyunIdentity();
+      console.error(`  身份：账号 UID ${id.accountId} · ${id.isRamUser ? 'RAM 子用户' : '主账号'}`);
       const res = await listAliyunSmsResources();
       const list = (arr, fmt) => (arr.length ? arr.map(fmt).join('、') : '（一个都没有）');
       console.error(`  签名：${list(res.signs, (s) => `${s.name}(${s.status})`)}`);
@@ -207,8 +227,11 @@ try {
       console.error(`  你配置的签名「${config.aliyunSms.signName}」${hasSign ? '在' : '不在'}这个账号；`
         + `模板「${config.aliyunSms.templateCode}」${hasTpl ? '在' : '不在'}这个账号`);
       if (!hasSign || !hasTpl) {
-        console.error('  → 基本可以确定：这把 AccessKey 与控制台里看到那个模板的账号不是同一个，');
-        console.error('     换用该账号下的 AccessKey 即可（控制台右上角可切换账号查看 UID）。');
+        console.error('  → 这把 Key 所属账号里查不到你配置的签名/模板。请核对：');
+        console.error(`     上面这个账号 UID（${id.accountId}）是不是「能看到赠送模板的那个账号」；`);
+        console.error('     不一致 → 换用那个账号的 AccessKey；');
+        console.error('     一致但仍查不到 → 说明赠送签名/模板不通过这个查询接口返回，');
+        console.error('                      以实际发送结果为准（能发出去就说明没问题）。');
       }
     } catch (e2) {
       console.error(`  （查询失败：${e2.message}）`);
