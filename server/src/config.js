@@ -71,6 +71,10 @@ export const config = {
     accessKeySecret: process.env.ALIYUN_SMS_ACCESS_KEY_SECRET || '',
     signName: process.env.ALIYUN_SMS_SIGN_NAME || '',
     templateCode: process.env.ALIYUN_SMS_TEMPLATE_CODE || '',
+    // 模板内容里用到的变量，必须与阿里云控制台模板一字不差地对上。
+    // 例：模板内容「验证码为${code}，${min}分钟内有效」→ 这里写 code,min
+    // （阿里云赠送的「登录/注册模板」100001 就是 code + min 两个变量）
+    templateVars: process.env.ALIYUN_SMS_TEMPLATE_VARS || 'code,min',
     regionId: process.env.ALIYUN_SMS_REGION_ID || 'cn-hangzhou',
   },
 

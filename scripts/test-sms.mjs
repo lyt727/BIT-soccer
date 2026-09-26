@@ -34,6 +34,8 @@ if (provider === 'aliyun') {
   console.log(`  AccessKeySecret                  ${accessKeySecret ? '已配置' : '（未配置）'}`);
   console.log(`  签名名称 SIGN_NAME               ${signName || '（未配置）'}`);
   console.log(`  模板 CODE                        ${templateCode || '（未配置）'}`);
+  console.log(`  模板变量 TEMPLATE_VARS           ${config.aliyunSms.templateVars}`
+    + `（对应模板内容里的 ${config.aliyunSms.templateVars.split(/[\s,，]+/).filter(Boolean).map((v) => '${' + v + '}').join(' ')}）`);
   console.log(`  接口地域 REGION_ID               ${regionId}（默认 cn-hangzhou，不用改）`);
   if (missing.length) {
     console.log(`\n缺少：${missing.join('、')}`);
@@ -43,8 +45,9 @@ if (provider === 'aliyun') {
     process.exit(1);
   }
   console.log('');
-  console.log('提醒：模板里的变量必须和代码一致 —— 本系统只传 ${code} 这一个变量，');
-  console.log('      所以模板内容只能出现 ${code}，不要再加 ${minute} 之类，否则会发送失败。');
+  console.log('提醒：TEMPLATE_VARS 必须和控制台里「模板内容」的变量完全一致，');
+  console.log('      例如模板写「验证码为${code}，${min}分钟内有效」→ 这里就要填 code,min。');
+  console.log('      缺一个或多少一个，阿里云都会报参数不合法。');
 } else if (provider === 'tencent') {
   const { secretId, secretKey, appId, signName, templateId } = config.tencentSms;
   const missing = [
@@ -115,8 +118,9 @@ console.log('\n【请求演练】看看实际会发给阿里云什么（不联�
     console.log('   · TemplateCode 必须和控制台「模板管理」里显示的一模一样');
     console.log('     （赠送模板常见为 100001 或 SMS_xxxxxxx，照抄即可）');
     console.log(`   · SignName 必须与${'“'}这个模板配套、且已审核通过${'”'}的签名完全一致`);
-    console.log('   · TemplateParam 里的变量名（code）必须出现在模板内容里，');
-    console.log('     模板写成 ${code} 才行；写成 ${minute} 之类会发送失败');
+    console.log('   · TemplateParam 里的变量名必须与「模板内容」里的变量完全一致（个数也要一致）：');
+    console.log('     模板写 ${code} + ${min} → 这里就要同时有 code 和 min；');
+    console.log('     模板只有 ${code} → 把 ALIYUN_SMS_TEMPLATE_VARS 改成 code 即可。');
   }
 }
 

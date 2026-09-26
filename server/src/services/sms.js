@@ -97,6 +97,19 @@ async function sendAliyun(phone, code) {
   if (!accessKeyId || !accessKeySecret || !signName || !templateCode) {
     throw smsError('阿里云短信配置不完整，请检查 ALIYUN_SMS_* 环境变量');
   }
+  // 模板参数必须和模板内容里的变量一一对应，多一个少一个阿里云都会报参数不合法。
+  // 变量清单由 ALIYUN_SMS_TEMPLATE_VARS 配置（默认 code,min，对应赠送的登录/注册模板）。
+  const minutes = String(Math.max(1, Math.round(config.smsCodeTtlSeconds / 60)));
+  const wanted = String(config.aliyunSms.templateVars || 'code,min')
+    .split(/[\s,，;；]+/)
+    .map((s) => s.trim().replace(/^\$\{?|\}$/g, ''))
+    .filter(Boolean);
+  const templateParam = {};
+  for (const name of (wanted.length ? wanted : ['code'])) {
+    if (name === 'code') templateParam.code = code;
+    else if (['min', 'mins', 'minute', 'minutes'].includes(name)) templateParam[name] = minutes;
+    // 其它未知变量无法提供值：交给阿里云在返回里报错，比悄悄发一条内容不对的短信好
+  }
   const params = {
     AccessKeyId: accessKeyId,
     Action: 'SendSms',
@@ -108,7 +121,7 @@ async function sendAliyun(phone, code) {
     SignatureNonce: crypto.randomUUID(),
     SignatureVersion: '1.0',
     TemplateCode: templateCode,
-    TemplateParam: JSON.stringify({ code }),
+    TemplateParam: JSON.stringify(templateParam),
     Timestamp: new Date().toISOString().replace(/\.\d{3}Z$/, 'Z'),
     Version: '2017-05-25',
   };
