@@ -116,7 +116,7 @@ function matchCard(m, isAdmin, event, matches, canAi) {
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
         }) : null,
-        (canManage || m.report) ? btn(m.report ? '📝 战报' : '📝 AI 生成战报', {
+        (canManage || m.report) ? btn(m.report ? '📝 查看AI战报' : '📝 AI 生成战报', {
           type: 'outline', cls: 'sm', onClick: () => openReportFlow(m, canManage),
         }) : null,
         // 特殊情况说明的快捷入口（内容同样在「编辑」统一界面里可改）
@@ -215,7 +215,7 @@ function openReportEditor(m, isNew = false) {
   const hint = el('div', { class: 'me-hint' },
     regenCount >= 1
       ? '这场比赛已经重新生成过一次，还想改动请直接编辑上面的正文。'
-      : '点「AI 生成战报」会生成新的内容，覆盖上面的正文（每场比赛只允许重新生成一次）。');
+      : '点「重新生成」会生成新的内容，每场比赛只允许重新生成一次。');
   const box = openModal({
     title: `战报 · ${m.teamA.name} vs ${m.teamB.name}`,
     body: el('div', {},
