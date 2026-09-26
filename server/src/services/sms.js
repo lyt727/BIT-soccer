@@ -121,7 +121,10 @@ function aliyunHint(code, message) {
   return '';
 }
 
-// 阿里云短信走的是 RPC 风格接口：所有 Action 共用一套签名（GET + HMAC-SHA1）
+// 阿里云短信走的是 RPC 风格接口：所有 Action 共用一套签名。
+// 注意必须用 POST：阿里云这边接口只接受 POST，用 GET 调查询类接口会返回
+// UnsupportedHTTPMethod。参数放在表单体里，签名算法是 HMAC-SHA1，
+// 待签字符串为 POST&%2F&<再次编码后的规范化参数串>。
 async function aliyunRpc(action, actionParams = {}) {
   const { accessKeyId, accessKeySecret, regionId } = config.aliyunSms;
   if (!accessKeyId || !accessKeySecret) {
@@ -141,11 +144,15 @@ async function aliyunRpc(action, actionParams = {}) {
   };
   const query = Object.keys(params).sort()
     .map((k) => `${aliEncode(k)}=${aliEncode(params[k])}`).join('&');
-  const stringToSign = `GET&%2F&${aliEncode(query)}`;
+  const stringToSign = `POST&%2F&${aliEncode(query)}`;
   const signature = crypto.createHmac('sha1', `${accessKeySecret}&`)
     .update(stringToSign).digest('base64');
-  const url = `https://dysmsapi.aliyuncs.com/?Signature=${aliEncode(signature)}&${query}`;
-  const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
+  const res = await fetch('https://dysmsapi.aliyuncs.com/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: `Signature=${aliEncode(signature)}&${query}`,
+    signal: AbortSignal.timeout(15000),
+  });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.Code !== 'OK') {
     const head = action === 'SendSms' ? '阿里云短信发送失败' : `阿里云接口 ${action} 调用失败`;

@@ -137,13 +137,17 @@ console.log('\n【请求演练】看看实际会发给阿里云什么（不联�
   if (!captured) {
     console.log('  没有抓到请求（当前通道可能不需要 HTTP 调用）');
   } else {
-    const q = new URL(captured.url).searchParams;
+    const url = new URL(captured.url);
+    // 参数放在 POST 的表单体里；万一退回 GET，就从查询串里读
+    const q = new URLSearchParams(captured.opts?.body || url.search);
     const show = (k, mask = false) => {
       const v = q.get(k);
       if (v === null) return;
       console.log(`  ${k.padEnd(16)} = ${mask && v ? '（已隐藏）' : v}`);
     };
-    console.log(`  接口            = ${new URL(captured.url).origin}`);
+    console.log(`  接口            = ${url.origin}${url.pathname}`);
+    console.log(`  请求方法        = ${captured.opts?.method || 'GET'}`);
+    console.log(`  Content-Type    = ${captured.opts?.headers?.['Content-Type'] || '（无）'}`);
     show('Action');
     show('PhoneNumbers');
     show('PhoneNumber');
