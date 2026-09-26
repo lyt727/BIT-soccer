@@ -14,6 +14,10 @@
 // =============================================================
 import { api } from '../lib/api.js';
 import { el, clear, toast, btn, openModal, confirmBox, reloadKeepingScroll } from '../lib/ui.js';
+import {
+  buildLineupState, setStatus, toggleFlag, addExtraPlayer, updateExtraPlayer, removeRow,
+  validateLineup, toPayload, STATUS_LABEL,
+} from '../lib/lineup.js';
 
 const KO_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];
 const CUSTOM_ROUND = '__custom__';
@@ -60,12 +64,38 @@ export async function openMatchEditor({ event, matches = [], match = null, aiRes
       });
       modal.body.append(el('label', { class: 'field' }, el('span', {}, '选择比赛'), sel));
     }
+    // 名单状态：从报名名单铺底，再套上已保存/AI 识别的名单（AI 识别到但不在
+    // 报名名单里的人会作为「名单外球员」保留，不会被丢掉）
+    const membersOfTeam = (regId) => (state.teams || [])
+      .find((t) => t.id === regId)?.members || [];
+    const m = state.match;
+    state.lineup = {
+      A: buildLineupState({
+        lineup: m.lineups?.A,
+        members: membersOfTeam(m.teamA.registrationId),
+        aiLineup: state.ai?.match?.lineups?.A,
+      }),
+      B: buildLineupState({
+        lineup: m.lineups?.B,
+        members: membersOfTeam(m.teamB.registrationId),
+        aiLineup: state.ai?.match?.lineups?.B,
+      }),
+    };
     modal.body.append(buildForm(event, state, draw));
   };
   draw();
 
   const save = async () => {
-    const payload = collect(modal.body, state.match);
+    // 首发名单必须正好 1 名守门员 + 1 名队长（后端也会再校验一次）
+    const lineupErrors = [
+      ...validateLineup(state.lineup.A, '主队').errors,
+      ...validateLineup(state.lineup.B, '客队').errors,
+    ];
+    if (lineupErrors.length) {
+      toast(lineupErrors.join('；'), 'error', 5200);
+      return;
+    }
+    const payload = collect(modal.body, state);
     const hasResult = payload.scoreA !== null && payload.scoreB !== null;
     if (hasResult
       && (payload.goalsA.length !== payload.scoreA || payload.goalsB.length !== payload.scoreB)) {
@@ -207,8 +237,6 @@ function buildForm(event, state, redraw) {
   }
 
   // ---- ② 比赛数据 ----
-  const existingLineupA = normLineup(pick2(aiM?.lineups?.A, match.lineups?.A));
-  const existingLineupB = normLineup(pick2(aiM?.lineups?.B, match.lineups?.B));
   const existingGoalsA = aiM ? normGoals(aiM.goals, 'A') : normGoals(match.goals, 'A');
   const existingGoalsB = aiM ? normGoals(aiM.goals, 'B') : normGoals(match.goals, 'B');
   const existingSubs = aiM ? normSubs(aiM.substitutions) : normSubs(match.substitutions);
@@ -260,19 +288,12 @@ function buildForm(event, state, redraw) {
       match.status === 'finished'
         ? '本场已完赛；改动比分与事件后保存即时生效。'
         : '比分留空表示本场尚未开赛；填写比分并保存后本场标记为「已完赛」。'),
-    el('div', { class: 'section-title lv2' }, '比赛服颜色与双方名单'),
+    el('div', { class: 'section-title lv2' }, '双方名单（从报名名单里点选）'),
+    el('div', { class: 'me-note' },
+      '左边主队、右边客队；每队先是首发、下面是替补。首发名单必须正好有 1 名守门员和 1 名队长（🧤 守门员 / © 队长）。'),
     el('div', { class: 'grid cols-2 me-grid' },
-      field('主队比赛服颜色', el('input', {
-        id: 'me-color-a', value: existingLineupA.color, placeholder: '如：红白',
-      }), false),
-      field('客队比赛服颜色', el('input', {
-        id: 'me-color-b', value: existingLineupB.color, placeholder: '如：蓝黑',
-      }), false)),
-    el('div', { class: 'grid cols-2 me-grid' },
-      lineupEditor('主队 · 首发', 'me-lineup-a-start', existingLineupA.starting),
-      lineupEditor('主队 · 替补', 'me-lineup-a-bench', existingLineupA.substitutes),
-      lineupEditor('客队 · 首发', 'me-lineup-b-start', existingLineupB.starting),
-      lineupEditor('客队 · 替补', 'me-lineup-b-bench', existingLineupB.substitutes)),
+      lineupTeamBlock('A', match.teamA.name, state.lineup.A),
+      lineupTeamBlock('B', match.teamB.name, state.lineup.B)),
     el('div', { class: 'section-title lv2' }, '主队进球球员'),
     goalsA,
     el('div', { class: 'section-title lv2' }, '客队进球球员'),
@@ -312,10 +333,112 @@ function buildForm(event, state, redraw) {
   );
 }
 
-function pick2(a, b) {
-  if (a && ((a.starting && a.starting.length) || (a.substitutes && a.substitutes.length)
-    || String(a.color || '').trim())) return a;
-  return b;
+// ---------------- 双方名单（左主队 / 右客队，各队首发在上、替补在下）----------------
+const byNo = (a, b) => (parseInt(a.no, 10) || 999) - (parseInt(b.no, 10) || 999)
+  || String(a.name).localeCompare(String(b.name), 'zh-Hans-CN');
+
+function lineupTeamBlock(side, teamName, teamState) {
+  const root = el('div', { class: 'lineup-side', dataset: { side } });
+  const counters = el('div', { class: 'lp-counters small' });
+  const lists = el('div', { class: 'lp-lists' });
+  const colorIn = el('input', {
+    id: `me-color-${side.toLowerCase()}`, value: teamState.color, placeholder: '如：红白',
+  });
+  colorIn.addEventListener('input', () => { teamState.color = colorIn.value.trim(); });
+  root.append(
+    el('div', { class: 'lp-head' },
+      el('div', { class: 'lp-team' }, teamName),
+      el('div', { class: 'lp-color' },
+        el('span', { class: 'small muted' }, '比赛服颜色'), colorIn)),
+    counters,
+    lists);
+
+  const render = () => {
+    clear(lists);
+    const start = teamState.rows.filter((r) => r.status === 'start').sort(byNo);
+    const benchRows = teamState.rows.filter((r) => r.status === 'bench').sort(byNo);
+    const idle = teamState.rows.filter((r) => r.status === 'none').sort(byNo);
+    const captains = start.filter((r) => r.captain).length;
+    const keepers = start.filter((r) => r.gk).length;
+    const okFlags = !start.length || (captains === 1 && keepers === 1);
+    clear(counters);
+    counters.className = `lp-counters small ${okFlags ? 'muted' : 'lp-warn'}`;
+    counters.append(el('span', {},
+      `首发 ${start.length} 人 · 🧤 ${keepers} · © ${captains}`
+      + (okFlags ? '' : '　首发必须有且只有 1 名守门员、1 名队长')));
+    lists.append(
+      lineupList('start', `首发（${start.length} 人）`, start, teamState, render),
+      lineupList('bench', `替补（${benchRows.length} 人）`, benchRows, teamState, render),
+      lineupList('none', `未上场（${idle.length} 人）`, idle, teamState, render),
+      lineupExtraBlock(teamState, render));
+  };
+  render();
+  return root;
+}
+
+function lineupList(status, title, rows, teamState, render) {
+  return el('div', { class: 'lineup-list', dataset: { status } },
+    el('div', { class: 'lp-list-title' }, title),
+    ...rows.map((row) => lineupRow(row, teamState, render)),
+    rows.length ? null : el('div', { class: 'small muted lp-empty' }, '（无）'));
+}
+
+function lineupRow(row, teamState, render) {
+  const flagBtn = (flag, text, on, enabled, title) => el('button', {
+    class: `lp-flag ${flag}${on ? ' on' : ''}`,
+    type: 'button',
+    title,
+    disabled: enabled ? undefined : true,
+    onclick: () => { toggleFlag(teamState, row.id, flag); render(); },
+  }, text);
+  const statusSel = el('select', {
+    class: 'lp-status',
+    onchange: (e) => { setStatus(teamState, row.id, e.target.value); render(); },
+  }, ['none', 'start', 'bench'].map((s) => el('option', {
+    value: s, selected: row.status === s,
+  }, STATUS_LABEL[s])));
+  return el('div', {
+    class: `lineup-row${row.extra ? ' extra' : ''}`,
+    dataset: { id: row.id, status: row.status, extra: row.extra ? '1' : '0' },
+  },
+  row.extra
+    ? el('input', {
+      class: 'lp-no-in', value: row.no, placeholder: '号',
+      oninput: (e) => updateExtraPlayer(teamState, row.id, { no: e.target.value }),
+    })
+    : el('span', { class: 'lp-no' }, row.no || '—'),
+  row.extra
+    ? el('input', {
+      class: 'lp-name-in', value: row.name, placeholder: '姓名',
+      oninput: (e) => updateExtraPlayer(teamState, row.id, { name: e.target.value }),
+    })
+    : el('span', { class: 'lp-name' }, row.name),
+  flagBtn('gk', '🧤', row.gk, row.status !== 'none',
+    '本场守门员（首发必须有且只有 1 名；替补可标备选门将）'),
+  flagBtn('captain', '©', row.captain, row.status === 'start',
+    '本场队长（只能在首发，且只能一名）'),
+  statusSel,
+  row.extra ? el('button', {
+    class: 'icon-btn', type: 'button', html: '✕',
+    onclick: () => { removeRow(teamState, row.id); render(); },
+  }) : null);
+}
+
+// 名单外球员：不在报名名单里的人（AI 识别到或临时加的），保留在名单里单独标出，
+// 绝不能因为"不在报名名单"就丢掉
+function lineupExtraBlock(teamState, render) {
+  const extras = teamState.rows.filter((r) => r.extra);
+  return el('div', { class: 'lp-extra' },
+    el('div', { class: 'lp-list-title' },
+      `名单外球员（${extras.length} 人）`,
+      el('span', { class: 'small muted' }, '　不在报名名单里的人，会保留在名单中')),
+    extras.length
+      ? el('div', { class: 'small muted lp-empty' }, '上面带「⚠」底色的就是他们')
+      : el('div', { class: 'small muted lp-empty' }, '（无）'),
+    el('button', {
+      class: 'btn sm outline', type: 'button',
+      onclick: () => { addExtraPlayer(teamState); render(); },
+    }, '＋ 添加名单外球员'));
 }
 
 function field(labelText, input, required = true) {
@@ -327,14 +450,7 @@ function label(text) {
   return el('div', { class: 'small muted' }, text);
 }
 
-function lineupEditor(labelText, id, players) {
-  const text = (players || []).map((p) => (p.no ? `${p.no} ${p.name}` : p.name)).join('\n');
-  return el('label', { class: 'field' },
-    el('span', {}, labelText),
-    el('textarea', { id, rows: 5, placeholder: '每行一名球员：号码 姓名' }, text));
-}
-
-function numberInput(id, value) {
+  function numberInput(id, value) {
   return el('input', {
     id, type: 'number', min: 0, max: 99,
     value: (value === '' || value === null || value === undefined) ? '' : Number(value),
@@ -466,7 +582,8 @@ function selectedTextOf(sel) {
 }
 
 // ---------------- 读取表单 ----------------
-function collect(body, match) {
+function collect(body, state) {
+  const match = state.match;
   const q = (sel) => body.querySelector(sel);
   const val = (sel) => (q(sel) ? q(sel).value.trim() : '');
   const scoreOf = (sel) => (q(sel) && String(q(sel).value).trim() !== '' ? clamp(q(sel).value) : null);
@@ -512,41 +629,16 @@ function collect(body, match) {
       type: row.querySelector('.c-type').value,
       time: row.querySelector('.c-time').value.trim(),
     })).filter((c) => c.player),
-    lineupA: {
-      color: val('#me-color-a'),
-      starting: linesOf(q('#me-lineup-a-start')),
-      substitutes: linesOf(q('#me-lineup-a-bench')),
-    },
-    lineupB: {
-      color: val('#me-color-b'),
-      starting: linesOf(q('#me-lineup-b-start')),
-      substitutes: linesOf(q('#me-lineup-b-bench')),
-    },
+    lineupA: toPayload(state.lineup.A),
+    lineupB: toPayload(state.lineup.B),
     // ③ 工作人员
     matchStaff: Object.fromEntries(STAFF_FIELDS.map(([key]) => [key, val(`#me-staff-${key}`)])),
     source: 'manual',
   };
 }
 
-function linesOf(node) {
-  return ((node && node.value) || '').split(/\n+/).map((s) => s.trim()).filter(Boolean);
-}
-
-// ---------------- 兼容三种来源的数据结构 ----------------
-// AI 识别结果用 camelCase，数据库读出来的是 snake_case
-function normLineup(l) {
-  if (!l) return { color: '', starting: [], substitutes: [] };
-  const players = (arr) => (arr || []).map((p) => ({
-    no: String(p.no ?? p.number ?? '').trim(),
-    name: String(p.name ?? p.player ?? '').trim(),
-  })).filter((p) => p.name || p.no);
-  return {
-    color: String(l.color || '').trim(),
-    starting: players(l.starting || l.start),
-    substitutes: players(l.substitutes || l.bench),
-  };
-}
-
+  // ---------------- 兼容三种来源的数据结构 ----------------
+  // AI 识别结果用 camelCase，数据库读出来的是 snake_case
 function normGoals(list, side) {
   return (list || []).filter((g) => !g.side || g.side === side).map((g) => ({
     no: String(g.no ?? g.player_no ?? '').trim(),

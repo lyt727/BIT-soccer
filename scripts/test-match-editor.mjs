@@ -70,8 +70,17 @@ const base = {
     supervisor: '测试监督', photographer: '拍照同学', videographer: '录像同学',
     commentator: '解说同学', reporter: '战报同学',
   },
-  lineupA: { color: '红白', starting: ['1 甲一', '7 甲七'], substitutes: ['12 甲十二'] },
-  lineupB: { color: '蓝黑', starting: ['1 乙一'], substitutes: ['9 乙九'] },
+  // 首发名单必须正好 1 名守门员 + 1 名队长（第 1 个标门将、第 2 个标队长）
+  lineupA: {
+    color: '红白',
+    starting: [{ no: '1', name: '甲一', gk: true }, { no: '7', name: '甲七', captain: true }],
+    substitutes: [{ no: '12', name: '甲十二' }],
+  },
+  lineupB: {
+    color: '蓝黑',
+    starting: [{ no: '1', name: '乙一', gk: true, captain: true }],
+    substitutes: [{ no: '9', name: '乙九' }],
+  },
 };
 
 // ---- ① 只保存比赛信息：不写赛果，比赛仍为未开赛 ----

@@ -656,6 +656,51 @@ td:last-child, th:last-child { padding-right: 14px; }
 /* 名单输入框：行高统一，长名单更好读 */
 .match-editor textarea { line-height: 1.6; }
 
+/* ---------- 双方名单：左主队 / 右客队，每队首发在上、替补在下 ---------- */
+.match-editor .lineup-side {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 10px;
+  background: #fbfdfc;
+}
+.match-editor .lp-head { display: flex; flex-direction: column; gap: 4px; margin-bottom: 6px; }
+.match-editor .lp-team { font-weight: 700; font-size: 14px; color: var(--primary-dark); }
+.match-editor .lp-color { display: flex; align-items: center; gap: 6px; }
+.match-editor .lp-color input { flex: 1 1 auto; min-width: 0; padding: 6px 8px; font-size: 13px; }
+.match-editor .lp-counters { margin-bottom: 6px; }
+.match-editor .lp-counters.lp-warn { color: #b3541e; font-weight: 600; }
+.match-editor .lp-list-title {
+  font-size: 12.5px; font-weight: 600; color: #4a5b52;
+  margin: 8px 0 4px; padding-top: 6px; border-top: 1px dashed var(--line);
+}
+.match-editor .lineup-list:first-child .lp-list-title { border-top: 0; padding-top: 0; }
+.match-editor .lp-empty { padding: 2px 0 4px; }
+.match-editor .lineup-row {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 0;
+}
+.match-editor .lineup-row.extra { background: #fff8ec; border-radius: 8px; }
+.match-editor .lp-no {
+  flex: 0 0 34px; text-align: center; font-weight: 700; font-size: 13px;
+  color: var(--primary-dark);
+}
+.match-editor .lp-no-in {
+  flex: 0 0 46px; padding: 5px 4px; text-align: center; font-size: 12.5px;
+}
+.match-editor .lp-name { flex: 1 1 auto; min-width: 0; font-size: 13.5px; }
+.match-editor .lp-name-in { flex: 1 1 70px; min-width: 0; padding: 5px 8px; font-size: 13px; }
+.match-editor .lp-flag {
+  flex: 0 0 30px; height: 30px; padding: 0; border-radius: 8px;
+  border: 1px solid var(--line); background: #fff; font-size: 14px; line-height: 1;
+  color: #b3bfb8;
+}
+.match-editor .lp-flag.on { border-color: var(--primary); background: var(--primary-light); color: var(--primary-dark); }
+.match-editor .lp-flag:disabled { opacity: .35; }
+.match-editor .lp-status {
+  flex: 0 0 76px; padding: 5px 6px; font-size: 12.5px;
+}
+.match-editor .lp-extra { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
+
 /* 手机端：两列退成一列 */
 @media (max-width: 719px) {
   .match-editor .grid.cols-2 { grid-template-columns: 1fr; }

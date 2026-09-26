@@ -12,15 +12,20 @@ async function teamNameOf(db, regId) {
 }
 
 function parsePlayer(v) {
+  const flags = (o) => ({
+    gk: Boolean(o && (o.gk || o.goalkeeper)),
+    captain: Boolean(o && o.captain),
+  });
   if (!v) return null;
   if (typeof v === 'object') {
     const name = String(v.name || v.player || '').trim();
     const no = String(v.no ?? v.number ?? '').trim();
-    return name ? { no, name } : null;
+    return name ? { no, name, ...flags(v) } : null;
   }
   const text = String(v).trim();
   const m = /^(?:#?\s*)?(\d{1,3})[\s.、\-·]+(.+)$/.exec(text);
-  return m ? { no: m[1], name: m[2].trim() } : { no: '', name: text };
+  return m ? { no: m[1], name: m[2].trim(), gk: false, captain: false }
+    : { no: '', name: text, gk: false, captain: false };
 }
 
 function parseLineupJson(text) {
@@ -177,6 +182,25 @@ function cleanLineup(v) {
   };
 }
 
+// 首发名单非空时：必须有且只有 1 名队长、1 名守门员（与前端同一条规则；
+// 后端再拦一道，防止绕过界面写进不合规的名单）。
+// 队长只允许出现在首发；守门员可以出现在替补（备选门将），不影响这条校验。
+function assertLineupFlags(lineup, teamLabel) {
+  const starters = (lineup.starting || []).filter((p) => p.name || p.no);
+  if (!starters.length) return; // 还没填首发名单，不校验
+  const captains = starters.filter((p) => p.captain).length;
+  const keepers = starters.filter((p) => p.gk).length;
+  if (captains !== 1) {
+    throw badRequest(`${teamLabel}首发名单里必须有且只有 1 名队长（当前 ${captains} 名）`);
+  }
+  if (keepers !== 1) {
+    throw badRequest(`${teamLabel}首发名单里必须有且只有 1 名守门员（当前 ${keepers} 名）`);
+  }
+  if ((lineup.substitutes || []).some((p) => p.captain)) {
+    throw badRequest(`${teamLabel}的队长必须出现在首发名单里`);
+  }
+}
+
 const KNOCKOUT_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];
 
 function validateSchedule(body, partial = false, format = 'group_knockout') {
@@ -319,9 +343,17 @@ export function registerMatchRoutes(router) {
     if (body.roundName !== undefined) {
       next.round_name = String(body.roundName).trim().slice(0, 20);
     }
-    if (body.lineupA !== undefined) next.lineup_a = JSON.stringify(cleanLineup(body.lineupA));
-    if (body.lineupB !== undefined) next.lineup_b = JSON.stringify(cleanLineup(body.lineupB));
-    const keys = Object.keys(next);
+      if (body.lineupA !== undefined) {
+        const lineupA = cleanLineup(body.lineupA);
+        assertLineupFlags(lineupA, '主队');
+        next.lineup_a = JSON.stringify(lineupA);
+      }
+      if (body.lineupB !== undefined) {
+        const lineupB = cleanLineup(body.lineupB);
+        assertLineupFlags(lineupB, '客队');
+        next.lineup_b = JSON.stringify(lineupB);
+      }
+      const keys = Object.keys(next);
     if (!keys.length) throw badRequest('没有需要更新的字段');
     const sql = `UPDATE matches SET ${keys.map((k) => `${k} = ?`).join(', ')} WHERE id = ?`;
     await db.run(sql, [...keys.map((k) => next[k]), match.id]);
@@ -498,10 +530,18 @@ export function registerMatchRoutes(router) {
         && ['yellow', 'red'].includes(String(c.type || '')));
       if (!cardsOk) throw badRequest('红黄牌记录需包含球员与牌型（yellow/red）');
     }
-    if (body.lineupA !== undefined) next.lineup_a = JSON.stringify(cleanLineup(body.lineupA));
-    if (body.lineupB !== undefined) next.lineup_b = JSON.stringify(cleanLineup(body.lineupB));
+      if (body.lineupA !== undefined) {
+        const lineupA = cleanLineup(body.lineupA);
+        assertLineupFlags(lineupA, '主队');
+        next.lineup_a = JSON.stringify(lineupA);
+      }
+      if (body.lineupB !== undefined) {
+        const lineupB = cleanLineup(body.lineupB);
+        assertLineupFlags(lineupB, '客队');
+        next.lineup_b = JSON.stringify(lineupB);
+      }
 
-    await db.exec('BEGIN');
+      await db.exec('BEGIN');
     try {
       const keys = Object.keys(next);
       if (keys.length) {
@@ -708,10 +748,18 @@ export function registerMatchRoutes(router) {
       && ['yellow', 'red'].includes(String(c.type || '')));
     if (!subsOk) throw badRequest('换人记录需同时填写下场与上场球员');
     if (!cardsOk) throw badRequest('红黄牌记录需包含球员与牌型（yellow/red）');
-    const lineupAJson = body.lineupA !== undefined
-      ? JSON.stringify(cleanLineup(body.lineupA)) : match.lineup_a;
-    const lineupBJson = body.lineupB !== undefined
-      ? JSON.stringify(cleanLineup(body.lineupB)) : match.lineup_b;
+      let lineupAJson = match.lineup_a;
+      let lineupBJson = match.lineup_b;
+      if (body.lineupA !== undefined) {
+        const lineupA = cleanLineup(body.lineupA);
+        assertLineupFlags(lineupA, '主队');
+        lineupAJson = JSON.stringify(lineupA);
+      }
+      if (body.lineupB !== undefined) {
+        const lineupB = cleanLineup(body.lineupB);
+        assertLineupFlags(lineupB, '客队');
+        lineupBJson = JSON.stringify(lineupB);
+      }
 
     await db.exec('BEGIN');
     try {

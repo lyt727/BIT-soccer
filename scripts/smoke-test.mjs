@@ -587,6 +587,16 @@ const aim = ai.data?.match;
 if (aim && ai.data?.suggestedMatchId) {
   const goalsA = (aim.goals || []).filter((g) => g.side === 'A');
   const goalsB = (aim.goals || []).filter((g) => g.side === 'B');
+  // 首发名单必须正好有 1 名守门员和 1 名队长（第 1 个标门将、第 2 个标队长）
+  const withFlags = (lineup) => ({
+    color: lineup.color,
+    starting: (lineup.starting || []).map((p, i) => ({
+      ...p, ...(i === 0 ? { gk: true } : {}), ...(i === 1 ? { captain: true } : {}),
+    })),
+    substitutes: lineup.substitutes || [],
+  });
+  const lineupA = withFlags({ color: aim.kitColorA, starting: aim.lineups.A.starting, substitutes: aim.lineups.A.substitutes });
+  const lineupB = withFlags({ color: aim.kitColorB, starting: aim.lineups.B.starting, substitutes: aim.lineups.B.substitutes });
   const applied = await call('POST', `/api/matches/${ai.data.suggestedMatchId}/result`, {
     token: opToken,
     body: {
@@ -597,16 +607,8 @@ if (aim && ai.data?.suggestedMatchId) {
       substitutions: aim.substitutions,
       cards: aim.cards,
       refereeRoles: aim.referees,
-      lineupA: {
-        color: aim.kitColorA,
-        starting: aim.lineups.A.starting,
-        substitutes: aim.lineups.A.substitutes,
-      },
-      lineupB: {
-        color: aim.kitColorB,
-        starting: aim.lineups.B.starting,
-        substitutes: aim.lineups.B.substitutes,
-      },
+      lineupA,
+      lineupB,
       source: 'ai',
     },
   });
@@ -614,6 +616,10 @@ if (aim && ai.data?.suggestedMatchId) {
     && applied.data?.lineups?.A?.starting?.length > 0
     && applied.data?.lineups?.A?.color
     && applied.data?.timeline?.some((t) => t.type === 'goal' && t.no));
+  check('名单里的守门员/队长标记也落库了',
+    applied.data?.lineups?.A?.starting?.some((p) => p.gk)
+    && applied.data?.lineups?.A?.starting?.some((p) => p.captain),
+    JSON.stringify(applied.data?.lineups?.A?.starting?.slice(0, 2)));
 }
 
 const failed = results.filter((r) => !r.ok).length;

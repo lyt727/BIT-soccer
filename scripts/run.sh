@@ -9,6 +9,7 @@
 #   bash scripts/run.sh roles            验证「按手机号认证管理员」不会动到已有账号
 #   bash scripts/run.sh sms [手机号]      短信配置自检（带手机号则真发一条）
 #   bash scripts/run.sh report            战报功能测试（需服务已启动）
+#   bash scripts/run.sh lineup            双方名单（守门员/队长）测试
 #
 # 这些命令都是只读或只写 data/backups，不会动到已有的报名数据。
 # 如果提示镜像不存在，先执行一次：docker compose build
@@ -63,14 +64,16 @@ case "$CMD" in
   roles)     run_in_container scripts/test-role-sync.mjs "$@" ;;
   sms)       run_in_container scripts/test-sms.mjs "$@" ;;
   report)    run_in_container scripts/test-report.mjs "$@" ;;
+  lineup)    run_in_container scripts/test-lineup.mjs "$@" ;;
   *)
-    echo "用法：bash scripts/run.sh {migration|security|backup|roles|sms|report} [参数...]"
+    echo "用法：bash scripts/run.sh {migration|security|backup|roles|sms|report|lineup} [参数...]"
     echo "  migration  升级不动数据验证（部署前跑，约 3 秒）"
     echo "  security   线上体检"
     echo "  backup     备份数据库与学生卡照片"
     echo "  roles      验证按手机号认证管理员不会动到已有账号"
     echo "  sms        短信配置自检（加手机号则真发一条测试短信）"
     echo "  report     战报功能测试（需服务已启动）"
+    echo "  lineup     双方名单（守门员/队长）测试"
     exit 1
     ;;
 esac
