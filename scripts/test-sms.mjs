@@ -146,6 +146,7 @@ console.log('\n【请求演练】看看实际会发给阿里云什么（不联�
     console.log(`  接口            = ${new URL(captured.url).origin}`);
     show('Action');
     show('PhoneNumbers');
+    show('PhoneNumber');
     show('SignName');
     show('TemplateCode');
     show('TemplateParam');

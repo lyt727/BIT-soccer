@@ -194,7 +194,11 @@ async function sendAliyun(phone, code) {
     // 其它未知变量无法提供值：交给阿里云在返回里报错，比悄悄发一条内容不对的短信好
   }
   return aliyunRpc('SendSms', {
+    // 阿里云文档在不同版本里出现过 PhoneNumbers 和 PhoneNumber 两种写法，
+    // 这里两个都带上（值相同）。RPC 接口会忽略它不认识的参数，
+    // 多传一个不会报错，能避免因为文档版本不同而卡在"参数缺失"上。
     PhoneNumbers: phone,
+    PhoneNumber: phone,
     SignName: signName,
     TemplateCode: templateCode,
     TemplateParam: JSON.stringify(templateParam),
