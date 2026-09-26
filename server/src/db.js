@@ -38,40 +38,55 @@ class SqliteStore {
   }
 
   // 早期版本的 reason 只允许 red_card / yellow_accumulation；SQLite 改不了 CHECK，只能重建表
+  // 这是唯一一处「重建表」的迁移，因此额外做两件事保护已有数据：
+  //   1. 整段放进事务，失败自动回滚，不会留下半迁移的库；
+  //   2. 迁移前后比对行数，少一行就当作失败回滚并抛错（宁可起不来，也不能悄悄丢数据）。
   relaxSuspensionReasonCheck() {
     const row = this.db.prepare(
       "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'player_suspensions'",
     ).get();
     if (!row || String(row.sql || '').includes("'other'")) return;
-    this.db.exec(`
-      ALTER TABLE player_suspensions RENAME TO player_suspensions_legacy;
-      CREATE TABLE player_suspensions (
-        id TEXT PRIMARY KEY,
-        event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
-        registration_id TEXT REFERENCES registrations(id) ON DELETE CASCADE,
-        team_name TEXT NOT NULL,
-        player TEXT NOT NULL,
-        player_no TEXT,
-        reason TEXT NOT NULL DEFAULT 'red_card'
-               CHECK (reason IN ('red_card','yellow_accumulation','other')),
-        matches_suspended INTEGER NOT NULL DEFAULT 1,
-        note TEXT,
-        status TEXT NOT NULL DEFAULT 'pending'
-               CHECK (status IN ('pending','served','void')),
-        cleared_yellow INTEGER NOT NULL DEFAULT 0,
-        created_by TEXT,
-        created_at TEXT NOT NULL,
-        updated_at TEXT
-      );
-      INSERT INTO player_suspensions
-        (id, event_id, registration_id, team_name, player, player_no, reason,
-         matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at)
-      SELECT id, event_id, registration_id, team_name, player, player_no, reason,
-             matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at
-        FROM player_suspensions_legacy;
-      DROP TABLE player_suspensions_legacy;
-      CREATE INDEX IF NOT EXISTS idx_susp_event ON player_suspensions(event_id);
-    `);
+    const before = this.db.prepare('SELECT COUNT(*) AS c FROM player_suspensions').get().c;
+    this.db.exec('BEGIN');
+    try {
+      this.db.exec(`
+        ALTER TABLE player_suspensions RENAME TO player_suspensions_legacy;
+        CREATE TABLE player_suspensions (
+          id TEXT PRIMARY KEY,
+          event_id TEXT NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+          registration_id TEXT REFERENCES registrations(id) ON DELETE CASCADE,
+          team_name TEXT NOT NULL,
+          player TEXT NOT NULL,
+          player_no TEXT,
+          reason TEXT NOT NULL DEFAULT 'red_card'
+                 CHECK (reason IN ('red_card','yellow_accumulation','other')),
+          matches_suspended INTEGER NOT NULL DEFAULT 1,
+          note TEXT,
+          status TEXT NOT NULL DEFAULT 'pending'
+                 CHECK (status IN ('pending','served','void')),
+          cleared_yellow INTEGER NOT NULL DEFAULT 0,
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT
+        );
+        INSERT INTO player_suspensions
+          (id, event_id, registration_id, team_name, player, player_no, reason,
+           matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at)
+        SELECT id, event_id, registration_id, team_name, player, player_no, reason,
+               matches_suspended, note, status, cleared_yellow, created_by, created_at, updated_at
+          FROM player_suspensions_legacy;
+        DROP TABLE player_suspensions_legacy;
+        CREATE INDEX IF NOT EXISTS idx_susp_event ON player_suspensions(event_id);
+      `);
+      const after = this.db.prepare('SELECT COUNT(*) AS c FROM player_suspensions').get().c;
+      if (after !== before) {
+        throw new Error(`停赛记录迁移前后条数不一致（${before} → ${after}），已回滚`);
+      }
+      this.db.exec('COMMIT');
+    } catch (err) {
+      this.db.exec('ROLLBACK');
+      throw err;
+    }
     console.log('[migrate] player_suspensions 已重建，支持“其他原因”停赛');
   }
 
