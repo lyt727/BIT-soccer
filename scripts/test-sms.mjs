@@ -2,7 +2,7 @@
 // 短信配置自检 / 真实发送测试
 //
 // 用法：
-//   node scripts/test-sms.mjs                只检查配置，不发短信
+//   node scripts/test-sms.mjs                检查配置 + 演练请求（都不发短信、不走网络）
 //   node scripts/test-sms.mjs 13800000000    真发一条到指定手机号
 //   服务器上：bash scripts/run.sh sms [手机号]
 //
@@ -69,13 +69,60 @@ if (provider === 'aliyun') {
 }
 
 if (!phone) {
-  console.log('\n配置看起来齐全。想真发一条测试的话，加上手机号再跑一次：');
-  console.log('  node scripts/test-sms.mjs 你的手机号');
-  process.exit(0);
+  console.log('\n配置看起来齐全。');
 }
-if (!/^1\d{10}$/.test(phone)) {
+if (phone && !/^1\d{10}$/.test(phone)) {
   console.error(`\n手机号格式不对：${phone}`);
   process.exit(1);
+}
+
+// ---- 请求演练：把发出去的请求原样抓下来看一眼（不需要网络，也不会真发短信）----
+console.log('\n【请求演练】看看实际会发给阿里云什么（不联网、不发短信）');
+{
+  const realFetch = globalThis.fetch;
+  let captured = null;
+  globalThis.fetch = async (url, opts = {}) => {
+    captured = { url: String(url), opts };
+    return { ok: true, status: 200, json: async () => ({ Code: 'OK', RequestId: 'dry-run' }) };
+  };
+  try {
+    await sendSmsCode(phone || '13800000000', '123456');
+  } catch (err) {
+    console.log(`  演练失败：${err.message}`);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+  if (!captured) {
+    console.log('  没有抓到请求（当前通道可能不需要 HTTP 调用）');
+  } else {
+    const q = new URL(captured.url).searchParams;
+    const show = (k, mask = false) => {
+      const v = q.get(k);
+      if (v === null) return;
+      console.log(`  ${k.padEnd(16)} = ${mask && v ? '（已隐藏）' : v}`);
+    };
+    console.log(`  接口            = ${new URL(captured.url).origin}`);
+    show('Action');
+    show('PhoneNumbers');
+    show('SignName');
+    show('TemplateCode');
+    show('TemplateParam');
+    show('AccessKeyId', true);
+    show('Signature', true);
+    console.log('');
+    console.log('  核对要点：');
+    console.log('   · TemplateCode 必须和控制台「模板管理」里显示的一模一样');
+    console.log('     （赠送模板常见为 100001 或 SMS_xxxxxxx，照抄即可）');
+    console.log(`   · SignName 必须与${'“'}这个模板配套、且已审核通过${'”'}的签名完全一致`);
+    console.log('   · TemplateParam 里的变量名（code）必须出现在模板内容里，');
+    console.log('     模板写成 ${code} 才行；写成 ${minute} 之类会发送失败');
+  }
+}
+
+if (!phone) {
+  console.log('\n想真发一条测试的话，加上手机号再跑一次：');
+  console.log('  node scripts/test-sms.mjs 你的手机号');
+  process.exit(0);
 }
 
 const code = String(crypto.randomInt(100000, 1000000));
