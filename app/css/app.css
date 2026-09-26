@@ -680,6 +680,8 @@ td:last-child, th:last-child { padding-right: 14px; }
   padding: 3px 0;
 }
 .match-editor .lineup-row.extra { background: #fff8ec; border-radius: 8px; }
+/* 下拉选「－」的人（本次未列入名单）跟在替补栏里，淡化显示 */
+.match-editor .lineup-row[data-status="none"] { opacity: .55; }
 .match-editor .lp-no {
   flex: 0 0 34px; text-align: center; font-weight: 700; font-size: 13px;
   color: var(--primary-dark);
@@ -699,8 +701,6 @@ td:last-child, th:last-child { padding-right: 14px; }
 .match-editor .lp-status {
   flex: 0 0 76px; padding: 5px 6px; font-size: 12.5px;
 }
-.match-editor .lp-extra { margin-top: 8px; padding-top: 6px; border-top: 1px dashed var(--line); }
-
 /* 手机端：两列退成一列 */
 @media (max-width: 719px) {
   .match-editor .grid.cols-2 { grid-template-columns: 1fr; }

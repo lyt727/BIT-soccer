@@ -12,7 +12,7 @@
 //   · 队长每队唯一：标了一个，旧的自动取消
 // =============================================================
 
-export const STATUS_LABEL = { start: '首发', bench: '替补', none: '未上' };
+export const STATUS_LABEL = { start: '首发', bench: '替补', none: '－' };
 
 const normNo = (v) => String(v ?? '').trim();
 const normName = (v) => String(v ?? '').trim();

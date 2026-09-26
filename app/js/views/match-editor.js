@@ -15,7 +15,7 @@
 import { api } from '../lib/api.js';
 import { el, clear, toast, btn, openModal, confirmBox, reloadKeepingScroll } from '../lib/ui.js';
 import {
-  buildLineupState, setStatus, toggleFlag, addExtraPlayer, updateExtraPlayer, removeRow,
+  buildLineupState, setStatus, toggleFlag, updateExtraPlayer, removeRow,
   validateLineup, toPayload, STATUS_LABEL,
 } from '../lib/lineup.js';
 
@@ -288,9 +288,8 @@ function buildForm(event, state, redraw) {
       match.status === 'finished'
         ? '本场已完赛；改动比分与事件后保存即时生效。'
         : '比分留空表示本场尚未开赛；填写比分并保存后本场标记为「已完赛」。'),
-    el('div', { class: 'section-title lv2' }, '双方名单（从报名名单里点选）'),
-    el('div', { class: 'me-note' },
-      '左边主队、右边客队；每队先是首发、下面是替补。首发名单必须正好有 1 名守门员和 1 名队长（🧤 守门员 / © 队长）。'),
+    el('div', { class: 'section-title lv2' }, '双方名单'),
+    el('div', { class: 'me-note' }, '© 队长　🧤 守门员'),
     el('div', { class: 'grid cols-2 me-grid' },
       lineupTeamBlock('A', match.teamA.name, state.lineup.A),
       lineupTeamBlock('B', match.teamB.name, state.lineup.B)),
@@ -364,13 +363,13 @@ function lineupTeamBlock(side, teamName, teamState) {
     clear(counters);
     counters.className = `lp-counters small ${okFlags ? 'muted' : 'lp-warn'}`;
     counters.append(el('span', {},
-      `首发 ${start.length} 人 · 🧤 ${keepers} · © ${captains}`
+      `首发 ${start.length} 人 · 替补 ${benchRows.length} 人 · © ${captains} · 🧤 ${keepers}`
       + (okFlags ? '' : '　首发必须有且只有 1 名守门员、1 名队长')));
+    // 只有两栏：首发、替补。下拉选「－」的人（未列入本场名单）跟在替补栏里，
+    // 样式淡化以示区别，但保存时不会写进替补名单。
     lists.append(
-      lineupList('start', `首发（${start.length} 人）`, start, teamState, render),
-      lineupList('bench', `替补（${benchRows.length} 人）`, benchRows, teamState, render),
-      lineupList('none', `未上场（${idle.length} 人）`, idle, teamState, render),
-      lineupExtraBlock(teamState, render));
+      lineupList('start', '首发', start, teamState, render),
+      lineupList('bench', '替补', [...benchRows, ...idle], teamState, render));
   };
   render();
   return root;
@@ -413,10 +412,10 @@ function lineupRow(row, teamState, render) {
       oninput: (e) => updateExtraPlayer(teamState, row.id, { name: e.target.value }),
     })
     : el('span', { class: 'lp-name' }, row.name),
-  flagBtn('gk', '🧤', row.gk, row.status !== 'none',
-    '本场守门员（首发必须有且只有 1 名；替补可标备选门将）'),
   flagBtn('captain', '©', row.captain, row.status === 'start',
     '本场队长（只能在首发，且只能一名）'),
+  flagBtn('gk', '🧤', row.gk, row.status !== 'none',
+    '本场守门员（首发必须有且只有 1 名；替补可标备选门将）'),
   statusSel,
   row.extra ? el('button', {
     class: 'icon-btn', type: 'button', html: '✕',
@@ -424,22 +423,6 @@ function lineupRow(row, teamState, render) {
   }) : null);
 }
 
-// 名单外球员：不在报名名单里的人（AI 识别到或临时加的），保留在名单里单独标出，
-// 绝不能因为"不在报名名单"就丢掉
-function lineupExtraBlock(teamState, render) {
-  const extras = teamState.rows.filter((r) => r.extra);
-  return el('div', { class: 'lp-extra' },
-    el('div', { class: 'lp-list-title' },
-      `名单外球员（${extras.length} 人）`,
-      el('span', { class: 'small muted' }, '　不在报名名单里的人，会保留在名单中')),
-    extras.length
-      ? el('div', { class: 'small muted lp-empty' }, '上面带「⚠」底色的就是他们')
-      : el('div', { class: 'small muted lp-empty' }, '（无）'),
-    el('button', {
-      class: 'btn sm outline', type: 'button',
-      onclick: () => { addExtraPlayer(teamState); render(); },
-    }, '＋ 添加名单外球员'));
-}
 
 function field(labelText, input, required = true) {
   return el('label', { class: 'field' },
