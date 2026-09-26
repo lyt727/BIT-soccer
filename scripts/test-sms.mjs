@@ -200,18 +200,37 @@ try {
   console.log('收到短信就说明签名、模板、密钥都对了，可以把 SMS_MODE 切到生产使用了。');
 } catch (err) {
   console.error(`发送失败：${err.message}`);
+  // 按错误类型只列相关的原因，避免每次刷一大串无关提示
+  const msg = String(err.message || '');
+  const list = /SIGNATURE/i.test(msg)
+    ? [
+      '这个账号里没有你配置的那个签名。到控制台「签名管理」看当前账号下有哪些签名，',
+      '把 ALIYUN_SMS_SIGN_NAME 改成其中「审核通过」的那个（要一字不差）。',
+      '如果控制台显示的是「恒创联众」这类赠送签名，说明你控制台登录的可能是另一个阿里云账号，',
+      '此时要用那个账号的 AccessKey（比对下面自动排查里的账号 UID）。',
+    ]
+    : /TEMPLATE_PARAMETER|参数/i.test(msg)
+      ? [
+        '模板参数与「模板内容」里的变量对不上。',
+        '把 ALIYUN_SMS_TEMPLATE_VARS 改成与模板内容完全一致（例如模板只有 ${code} 就填 code）。',
+      ]
+      : /TEMPLATE/i.test(msg)
+        ? [
+          '这个账号里没有你配置的那个模板 CODE。',
+          '到控制台「模板管理」看当前账号下有哪些模板，把 ALIYUN_SMS_TEMPLATE_CODE 换成其中一个。',
+        ]
+        : /AMOUNT|BALANCE|QUOTA|欠费|余额/i.test(msg)
+          ? ['账号没买套餐包或余额不足 → 控制台充值 / 购买短信套餐包。']
+          : /forbidden|not authorized|RAM/i.test(msg)
+            ? [
+              'AccessKey 没有短信权限：RAM 控制台 → 用户 → 给这个账号授予 AliyunDysmsFullAccess。',
+            ]
+            : [
+              '手机号不在测试签名的白名单里，或当天发送次数超限；也可能是签名/模板未通过审核。',
+            ];
   console.error('');
-  console.error('常见原因：');
-  console.error('  · AccessKey 没有短信权限（最常见）');
-  console.error('      到 RAM 控制台 → 用户 → 找到这个 AccessKey 所属的账号 → 添加权限');
-  console.error('      授予系统策略：AliyunDysmsFullAccess');
-  console.error('      如果这个 Key 是「阿里云百炼」自动创建的（常见名字是 model-studio-user），');
-  console.error('      它默认只有大模型权限，需要另外加短信权限，或干脆新建一个专用子账号');
-  console.error('  · 主账号还没在短信服务控制台点过「开通」');
-  console.error('  · 签名或模板未通过审核 →「签名管理」「模板管理」看状态');
-  console.error('  · TEMPLATE_VARS 与「模板内容」里的变量对不上（本系统按配置逐个传）');
-  console.error('  · 没买套餐包或余额不足 → 控制台充值 / 购买套餐');
-  console.error('  · 手机号不在测试签名的白名单里，或当天发送次数超限');
+  console.error('针对这个错误：');
+  for (const line of list) console.error(`  · ${line}`);
   if (provider === 'aliyun') {
     console.error('');
     console.error('【自动排查】这把 AccessKey 账号下的签名与模板：');

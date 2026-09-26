@@ -159,7 +159,11 @@ async function aliyunRpc(action, actionParams = {}, {
     signal: AbortSignal.timeout(15000),
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || data?.Code !== 'OK') {
+  // 注意：短信接口成功时返回 Code:"OK"，但 STS 的 GetCallerIdentity 成功时
+  // 根本不返回 Code 字段（只有 AccountId/Arn/UserId）。所以"没有 Code 字段"
+  // 也要当成成功，否则会把成功当失败。
+  const failed = !res.ok || (data && 'Code' in data && data.Code !== 'OK');
+  if (failed) {
     const head = action === 'SendSms' ? '阿里云短信发送失败' : `阿里云接口 ${action} 调用失败`;
     const err = smsError(`${head}（${data?.Code || res.status}）：`
       + `${data?.Message || ''}${smsHint ? aliyunHint(data?.Code, data?.Message) : ''}`
@@ -194,13 +198,19 @@ export async function describeAliyunIdentity() {
 export async function listAliyunSmsResources() {
   const signData = await aliyunRpc('QuerySmsSignList', { PageIndex: 1, PageSize: 50 });
   const tplData = await aliyunRpc('QuerySmsTemplateList', { PageIndex: 1, PageSize: 50 });
-  const statusText = (v) => ({ 0: '审核中', 1: '审核通过', 2: '审核失败' }[Number(v)] || `状态${v}`);
+  const statusText = (v) => {
+    if (v === undefined || v === null || v === '') return '';
+    return { 0: '审核中', 1: '审核通过', 2: '审核失败' }[Number(v)] || `状态${v}`;
+  };
   return {
     signs: (signData.SmsSignList || []).map((s) => ({
-      name: s.SignName, status: statusText(s.SignStatus), reason: s.Reason || '',
+      name: s.SignName,
+      status: statusText(s.SignStatus ?? s.Status ?? s.AuditStatus),
+      reason: s.Reason || s.RejectInfo || '',
     })),
     templates: (tplData.SmsTemplateList || []).map((t) => ({
-      code: t.TemplateCode, name: t.TemplateName, status: statusText(t.TemplateStatus),
+      code: t.TemplateCode, name: t.TemplateName,
+      status: statusText(t.TemplateStatus ?? t.Status ?? t.AuditStatus),
       content: t.TemplateContent || '', reason: t.Reason || '',
     })),
   };
