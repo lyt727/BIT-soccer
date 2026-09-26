@@ -83,6 +83,54 @@ export function assertResetAllowed() {
 }
 
 // 统计库里各类数据的条数，写进备份清单，方便日后确认备份有没有内容
+// 数据目录解析：同一份数据在不同环境下路径不一样，写死一个必然出错
+//   本地仓库：  <root>/server/data/{greensinbit.db, uploads}
+//   服务器上：  <root>/data/{greensinbit.db, uploads}
+//              （compose 把主机的 ./data 挂进容器，在容器里显示成 /app/server/data）
+// 优先级：环境变量 → 哪个目录里真有 greensinbit.db → 哪个目录存在 → 默认 server/data
+export function resolveDataPaths(root) {
+  let base = null;
+  let from = 'auto';
+  const envDb = process.env.DB_FILE;
+  if (envDb) {
+    base = path.dirname(path.resolve(envDb));
+    from = 'DB_FILE';
+  } else {
+    const candidates = [path.join(root, 'server', 'data'), path.join(root, 'data')];
+    const withDb = candidates.find((d) => fs.existsSync(path.join(d, 'greensinbit.db')));
+    const existing = candidates.find((d) => fs.existsSync(d));
+    base = withDb || existing || candidates[0];
+  }
+  return {
+    dir: base,
+    from,
+    dbFile: envDb || path.join(base, 'greensinbit.db'),
+    uploadDir: process.env.UPLOAD_DIR || path.join(base, 'uploads'),
+    backupsRoot: process.env.BACKUP_DIR || path.join(base, 'backups'),
+  };
+}
+
+// 清理旧备份。只删「本脚本自己生成的备份目录」：
+// 必须在 backupsRoot 下面，而且里面得有 manifest.json。
+// 这样即使哪天目录配错了，也不会把 uploads 之类的真实目录删掉。
+export function pruneBackups(backupsRoot, keep) {
+  if (!fs.existsSync(backupsRoot)) return { removed: [], total: 0 };
+  const dirs = fs.readdirSync(backupsRoot, { withFileTypes: true })
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort()
+    .reverse();
+  const removed = [];
+  for (const name of dirs.slice(keep)) {
+    const full = path.join(backupsRoot, name);
+    if (path.dirname(path.resolve(full)) !== path.resolve(backupsRoot)) continue;
+    if (!fs.existsSync(path.join(full, 'manifest.json'))) continue;
+    fs.rmSync(full, { recursive: true, force: true });
+    removed.push(name);
+  }
+  return { removed, total: dirs.length };
+}
+
 function readCounts(dbFile) {
   const tables = ['users', 'events', 'registrations', 'registration_members',
     'matches', 'files', 'player_suspensions'];

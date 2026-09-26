@@ -14,13 +14,13 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { verifyPassword } from '../server/src/security.js';
+import { resolveDataPaths } from './safety.mjs';
 
 await import('../server/src/env.js');
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dbFile = process.env.DB_FILE || path.join(root, 'server', 'data', 'greensinbit.db');
-const uploadDir = process.env.UPLOAD_DIR || path.join(root, 'server', 'data', 'uploads');
-const backupsRoot = process.env.BACKUP_DIR || path.join(root, 'server', 'data', 'backups');
+const paths = resolveDataPaths(root);
+const { dbFile, uploadDir, backupsRoot } = paths;
 
 const DEFAULT_PASSWORD = process.env.DEMO_PASSWORD || '123456';
 const rows = [];
@@ -28,6 +28,8 @@ const add = (level, title, detail) => rows.push({ level, title, detail });
 
 if (!fs.existsSync(dbFile)) {
   console.error(`找不到数据库文件：${dbFile}`);
+  console.error(`数据目录按「${paths.from}」判断为：${paths.dir}`);
+  console.error('服务器上请用：bash scripts/run.sh security');
   process.exit(1);
 }
 

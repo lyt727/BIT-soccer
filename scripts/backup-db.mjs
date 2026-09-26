@@ -21,14 +21,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { snapshotData, countFiles } from './safety.mjs';
+import { snapshotData, resolveDataPaths, pruneBackups } from './safety.mjs';
 
 await import('../server/src/env.js'); // 本地运行时顺带读一下 .env
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const dbFile = process.env.DB_FILE || path.join(root, 'server', 'data', 'greensinbit.db');
-const uploadDir = process.env.UPLOAD_DIR || path.join(root, 'server', 'data', 'uploads');
-const backupsRoot = process.env.BACKUP_DIR || path.join(root, 'server', 'data', 'backups');
+const paths = resolveDataPaths(root);
+const { dbFile, uploadDir, backupsRoot } = paths;
 
 // 解析参数：--out 指定输出目录，--keep 指定保留份数
 const args = process.argv.slice(2);
@@ -42,7 +41,14 @@ const outDir = path.resolve(root, argValue('--out', path.join(backupsRoot, stamp
 
 if (!fs.existsSync(dbFile)) {
   console.error(`[备份] 找不到数据库文件：${dbFile}`);
-  console.error('       如果是在服务器上，请确认当前目录是仓库根目录（内有 data/greensinbit.db）。');
+  console.error(`       数据目录按「${paths.from}」判断为：${paths.dir}`);
+  console.error('       服务器上的正确用法（数据库在主机 data/ 里）：');
+  console.error('         bash scripts/run.sh backup');
+  console.error('       或显式指定：');
+  console.error('         docker run --rm -v "$PWD:/app" -w /app \\');
+  console.error('           -e DB_FILE=/app/data/greensinbit.db \\');
+  console.error('           -e UPLOAD_DIR=/app/data/uploads \\');
+  console.error('           greensinbit:latest node scripts/backup-db.mjs');
   process.exit(1);
 }
 
@@ -51,6 +57,7 @@ const mb = (n) => `${(n / 1024 / 1024).toFixed(2)} MB`;
 
 console.log('[备份] 完成');
 console.log(`  目录        ${outDir}`);
+console.log(`  数据来源    ${paths.dir}（按 ${paths.from} 判断）`);
 console.log(`  数据库      ${result.consistent ? '一致性快照' : '文件拷贝（可能不一致）'} · ${mb(result.dbBytes || 0)}`);
 if (result.note) console.log(`  说明        ${result.note}`);
 if (result.counts) {
@@ -60,20 +67,10 @@ if (result.counts) {
 }
 console.log(`  上传文件    ${result.uploadFiles ?? 0} 个`);
 
-// 清理过旧的备份（只保留最近 keep 份）
-if (fs.existsSync(backupsRoot)) {
-  const entries = fs.readdirSync(backupsRoot, { withFileTypes: true })
-    .filter((e) => e.isDirectory())
-    .map((e) => e.name)
-    .sort()
-    .reverse();
-  const stale = entries.slice(keep);
-  for (const name of stale) {
-    fs.rmSync(path.join(backupsRoot, name), { recursive: true, force: true });
-  }
-  if (stale.length) console.log(`  已清理      ${stale.length} 份旧备份（保留最近 ${keep} 份）`);
-  console.log(`  现有备份    ${Math.min(entries.length, keep)} 份 · 目录 ${backupsRoot}`);
-}
+// 清理过旧的备份（只保留最近 keep 份；只删带 manifest.json 的自己生成的目录）
+const pruned = pruneBackups(backupsRoot, keep);
+if (pruned.removed.length) console.log(`  已清理      ${pruned.removed.length} 份旧备份（保留最近 ${keep} 份）`);
+if (pruned.total) console.log(`  现有备份    ${Math.min(pruned.total, keep)} 份 · 目录 ${backupsRoot}`);
 
 // 顺手校验：备份里数据库与上传文件都要有内容
 if (!result.db) {

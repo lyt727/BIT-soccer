@@ -22,9 +22,30 @@ docker image inspect "$IMAGE" >/dev/null 2>&1 || {
   exit 1
 }
 
-# 把当前目录挂进容器，这样跑的是你刚 pull 下来的代码（不用等重新构建镜像）
+# 把当前目录挂进容器，这样跑的是你刚 pull 下来的代码（不用等重新构建镜像）。
+#
+# 关键：主机上的数据在 <仓库根>/data，而 compose 会把它挂成容器里的 /app/server/data。
+# 这里没走 compose，所以必须手动告诉脚本数据在哪，否则它会按容器习惯去找
+# /app/server/data/greensinbit.db —— 那里是空的，就会报「找不到数据库文件」。
+DATA_DIR="$PWD/data"
+
+# 先确认数据确实在这里，避免把脚本指到空目录去（脚本本身只读，但早点报错更清楚）
+if [ ! -f "$DATA_DIR/greensinbit.db" ]; then
+  echo "在 $DATA_DIR 里没找到 greensinbit.db。"
+  echo "请确认你是在仓库根目录执行这个脚本（目录名一般是 greensinbit）："
+  echo "  cd ~/greensinbit && bash scripts/run.sh $CMD"
+  echo "当前目录：$PWD"
+  ls -la "$DATA_DIR" 2>/dev/null || echo "（$DATA_DIR 不存在）"
+  exit 1
+fi
+
 run_in_container() {
-  exec docker run --rm -v "$PWD:/app" -w /app "$IMAGE" node "$@"
+  exec docker run --rm \
+    -v "$PWD:/app" -w /app \
+    -e DB_FILE=/app/data/greensinbit.db \
+    -e UPLOAD_DIR=/app/data/uploads \
+    -e BACKUP_DIR=/app/data/backups \
+    "$IMAGE" node "$@"
 }
 
 case "$CMD" in
