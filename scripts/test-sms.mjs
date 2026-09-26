@@ -41,10 +41,17 @@ if (phone === '--list') {
   try {
     const res = await listAliyunSmsResources();
     console.log(`签名（共 ${res.signs.length} 个）：`);
-    if (!res.signs.length) console.log('  （一个都没有）');
+    if (!res.signs.length) {
+      console.log('  （一个都没有）');
+      console.log(`  [查证] 接口原始返回字段：${res.signRawKeys.join(', ') || '（空）'}`
+        + `；TotalCount=${res.signRawTotal}`);
+    }
     for (const s of res.signs) console.log(`  · ${s.name}  ${s.status}${s.reason ? `  ${s.reason}` : ''}`);
     console.log(`\n模板（共 ${res.templates.length} 个）：`);
-    if (!res.templates.length) console.log('  （一个都没有）');
+    if (!res.templates.length) {
+      console.log('  （一个都没有）');
+      console.log(`  [查证] 接口原始返回字段：TotalCount=${res.templateRawTotal}`);
+    }
     for (const t of res.templates) {
       console.log(`  · ${t.code}  ${t.name}  ${t.status}`);
       if (t.content) console.log(`      内容：${t.content}`);
@@ -57,12 +64,19 @@ if (phone === '--list') {
     console.log(`对照你配置的：签名「${wantSign}」${hasSign ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
     console.log(`              模板「${wantTpl}」${hasTpl ? '✅ 在这个账号里' : '❌ 不在此账号'}`);
     if (!hasSign || !hasTpl) {
-      console.log('\n两种可能，按顺序排除：');
-      console.log('  1) 这把 Key 和控制台里看到赠送模板的账号不是同一个');
-      console.log('     → 比对上面的「账号 UID」和控制台右上角显示的账号 ID，不一致就换 Key');
-      console.log('  2) 账号是对的，但赠送签名/模板不通过这个查询接口返回');
-      console.log('     → 此时以实际发送结果为准：能发出去就说明没问题');
-      console.log('     先跑一条真实发送：node scripts/test-sms.mjs 你的手机号');
+      if (!hasSign && hasTpl) {
+        console.log('\n模板已经有了，缺的是签名：');
+        console.log('  这个账号的 API 签名列表是空的（TotalCount=0），说明没有可用于 API 的签名。');
+        console.log('  控制台里看到的「赠送签名」（使用场景写「发送测试短信」的）只能控制台测试用，API 不认。');
+        console.log('  解决：控制台「签名管理」→ 添加签名，审核通过后把名字填进 ALIYUN_SMS_SIGN_NAME。');
+        console.log('  个人认证账号申请签名需要有公众号 / 小程序 / APP / 已备案网站之一作为依据。');
+      } else {
+        console.log('\n两种可能，按顺序排除：');
+        console.log('  1) 这把 Key 和控制台里看到赠送签名/模板的账号不是同一个');
+        console.log('     → 比对上面的「账号 UID」和控制台右上角显示的账号 ID，不一致就换 Key');
+        console.log('  2) 账号是对的，但赠送签名/模板不通过这个查询接口返回');
+        console.log('     → 此时以实际发送结果为准：能发出去就说明没问题');
+      }
       process.exit(1);
     }
   } catch (err) {

@@ -203,6 +203,10 @@ export async function listAliyunSmsResources() {
     return { 0: '审核中', 1: '审核通过', 2: '审核失败' }[Number(v)] || `状态${v}`;
   };
   return {
+    // 原始返回的字段名，用于区分"真的没有签名"和"我解析错了字段名"
+    signRawKeys: Object.keys(signData || {}),
+    signRawTotal: signData?.TotalCount ?? null,
+    templateRawTotal: tplData?.TotalCount ?? null,
     signs: (signData.SmsSignList || []).map((s) => ({
       name: s.SignName,
       status: statusText(s.SignStatus ?? s.Status ?? s.AuditStatus),
