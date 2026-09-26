@@ -5,8 +5,11 @@
 //
 // 用法（默认用临时库自测）：
 //   node scripts/test-migration.mjs
+//   服务器上没装 Node，用容器跑：bash scripts/run.sh migration
 // 用法（拿线上库的副本先验一遍，推荐部署前做）：
 //   node scripts/test-migration.mjs --db /path/to/数据库副本.db
+//   （服务器上：bash scripts/run.sh migration --db server/data/greensinbit.db）
+//   —— 演练是在临时副本上做的，指定的数据库文件本身不会被改动
 //
 // 检查三件事：
 //   ① 老结构（旧 CHECK 约束 + 旧列）升级后，每一张表的数据都还在；

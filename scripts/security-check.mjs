@@ -3,6 +3,7 @@
 //
 // 用法（服务器上，容器里跑）：
 //   cd ~/greensinbit && docker compose exec -T web node scripts/security-check.mjs
+//   或更省事：bash scripts/run.sh security
 // 用法（本机）：
 //   node scripts/security-check.mjs
 //

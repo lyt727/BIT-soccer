@@ -5,6 +5,7 @@
 //   node scripts/backup-db.mjs
 // 用法（服务器上，容器里跑，不用装 Node）：
 //   cd ~/greensinbit && docker compose exec -T web node scripts/backup-db.mjs
+//   或更省事：bash scripts/run.sh backup
 //
 // 产物：server/data/backups/<时间戳>/{greensinbit.db, uploads/, manifest.json}
 // 数据库用 SQLite 的 VACUUM INTO 做一致性快照，不需要停机。

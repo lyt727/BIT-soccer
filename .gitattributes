@@ -1,0 +1,4 @@
+# Shell 脚本必须用 LF 换行：
+# 在 Windows 上编辑后如果存成 CRLF，传到 Linux 服务器执行会报
+# “/bin/bash^M: bad interpreter” 或 "$'\r': command not found"。
+*.sh text eol=lf
