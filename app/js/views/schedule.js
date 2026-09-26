@@ -116,12 +116,84 @@ function matchCard(m, isAdmin, event, matches, canAi) {
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
         }) : null,
+        m.report ? btn('📝 战报', {
+          type: 'outline', cls: 'sm', onClick: () => showReportModal(m),
+        }) : null,
+        canManage ? btn(m.report ? '📝 重新生成战报' : '📝 AI 生成战报', {
+          type: 'outline', cls: 'sm', onClick: () => generateReport(m),
+        }) : null,
         // 特殊情况说明的快捷入口（内容同样在「编辑」统一界面里可改）
         canManage ? btn('✎ 特殊情况说明', {
           type: 'outline', cls: 'sm', onClick: () => editNoteModal(m),
         }) : null),
     ),
     actions);
+}
+
+// ---------------- AI 战报 ----------------
+// 只读查看：所有人（含参赛队员）都能看
+function showReportModal(m, extra = {}) {
+  const text = m.report || '';
+  const box = openModal({
+    title: `战报 · ${m.teamA.name} vs ${m.teamB.name}`,
+    body: el('div', {},
+      extra.source
+        ? el('div', { class: 'small muted', style: { marginBottom: '8px' } },
+          extra.source === 'ai'
+            ? `由 ${extra.model || 'AI'} 生成，可在「编辑比赛信息」里修改`
+            : '由本地模板生成（未配置 AI 或调用失败），可在「编辑比赛信息」里修改')
+        : null,
+      text
+        ? el('div', { class: 'card', style: { whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '14px' } }, text)
+        : el('div', { class: 'empty' }, '暂无战报', '📝')),
+  });
+  box.setFoot([
+    text ? btn('复制', {
+      onClick: async () => {
+        try {
+          await navigator.clipboard.writeText(text);
+          toast('战报已复制', 'success');
+        } catch {
+          toast('复制失败，请手动选择文本', 'error');
+        }
+      },
+    }) : null,
+    btn('关闭', {
+      type: 'primary',
+      onClick: () => { box.close(); if (extra.source) reloadKeepingScroll(); },
+    }),
+  ].filter(Boolean));
+}
+
+// 生成：未完赛先弹窗提示；已完赛才调接口（管理员 / 数据录入员）
+async function generateReport(m) {
+  if (m.status !== 'finished') {
+    const tip = openModal({
+      title: '无法生成战报',
+      body: el('div', {},
+        el('div', { class: 'warning-box' }, '比赛尚未结束，无法生成战报。'),
+        el('div', { class: 'small muted' },
+          '请先在「编辑比赛信息」里录入比分与比赛事件，把这场标记为「已完赛」之后再来生成。')),
+    });
+    tip.setFoot([btn('知道了', { type: 'primary', onClick: () => tip.close() })]);
+    return;
+  }
+  const modal = openModal({
+    title: '正在生成战报…',
+    body: el('div', { class: 'progress' },
+      el('div', { class: 'spinner' }), '正在根据比分、进球、换人、红黄牌撰写战报…'),
+  });
+  try {
+    const fresh = await api(`/matches/${m.id}/report`, { method: 'POST' });
+    modal.close();
+    toast(fresh.reportSource === 'ai'
+      ? `战报已生成（${fresh.reportModel}）`
+      : '战报已生成（本地模板）', 'success', 3200);
+    showReportModal(fresh, { source: fresh.reportSource, model: fresh.reportModel });
+  } catch (err) {
+    modal.close();
+    toast(err.message, 'error', 4200);
+  }
 }
 
 // 「技术统计与时间轴」只做展示：编辑统一走每场比赛的「编辑」按钮
@@ -155,6 +227,10 @@ function openMatchStats(m, event) {
     el('div', { class: 'grid cols-2' }, lineupBlock(A, m.lineups?.A), lineupBlock(B, m.lineups?.B)),
     el('div', { class: 'section-title' }, '比赛时间轴（进球 / 红黄牌 / 换人）'),
     timelineBlock(m, A, B),
+    el('div', { class: 'section-title' }, '战报'),
+    m.report
+      ? el('div', { class: 'card', style: { whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '14px' } }, m.report)
+      : el('div', { class: 'empty' }, '暂无战报', '📝'),
     el('div', { class: 'section-title' }, '比赛工作人员（裁判组之外）'),
     staffBlock(m),
   );

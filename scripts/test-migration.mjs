@@ -114,6 +114,19 @@ console.log('【一、模拟老库升级】');
               VALUES (?, ?, ?, ?, 'active', ?)`).run('u1', '13800000001', '同学甲', 'player', now);
   db.prepare(`INSERT INTO events (id, name, season, status, created_by, created_at)
               VALUES (?, ?, ?, ?, ?, ?)`).run('e1', '真实赛事', '2026', 'live', 'u1', now);
+  // 老库里已经存在的报名与比赛（用来验证"加新列时不动老数据"）
+  db.prepare(`INSERT INTO registrations (id, event_id, team_name, status, apply_time, created_by)
+              VALUES ('r1', 'e1', '信息与电子学院一队', 'approved', ?, 'u1')`).run(now);
+  db.prepare(`INSERT INTO registrations (id, event_id, team_name, status, apply_time, created_by)
+              VALUES ('r2', 'e1', '材料学院一队', 'approved', ?, 'u1')`).run(now);
+  db.prepare(`INSERT INTO matches
+      (id, event_id, team_a_id, team_b_id, match_date, start_time, venue, status,
+       score_a, score_b, created_by, created_at)
+      VALUES ('m1', 'e1', 'r1', 'r2', '2026-09-01', '15:30', '西操场 1 号场', 'finished', 2, 1, 'u1', ?)`).run(now);
+  db.prepare(`INSERT INTO match_goals (id, match_id, side, player, player_no, goal_time, is_penalty)
+              VALUES ('g1', 'm1', 'A', '同学甲', '9', ?, 0)`).run("23'");
+  // 模拟"还没有战报列"的老库：把这次新加的列删掉，看升级能不能原样加回来
+  db.exec('ALTER TABLE matches DROP COLUMN report;');
   for (let i = 1; i <= 5; i += 1) {
     db.prepare(`INSERT INTO player_suspensions
       (id, event_id, registration_id, team_name, player, player_no, reason, note, status,
@@ -132,12 +145,24 @@ console.log('【一、模拟老库升级】');
     `${before.counts.player_suspensions} → ${after.counts.player_suspensions}`);
   ok('升级后其它表数据一条不少（用户/赛事）',
     after.counts.users === 1 && after.counts.events === 1);
+  ok('升级后报名与比赛数据一条不少',
+    after.counts.registrations === 2 && after.counts.matches === 1 && after.counts.match_goals === 1,
+    `报名 ${after.counts.registrations} / 比赛 ${after.counts.matches} / 进球 ${after.counts.match_goals}`);
   const checkDb = new DatabaseSync(workDb);
   const ddl = checkDb.prepare(
     "SELECT sql FROM sqlite_master WHERE name = 'player_suspensions'",
   ).get().sql;
   checkDb.close();
   ok('表结构已升级（reason 允许 other）', String(ddl).includes("'other'"));
+  // 新加的列要自动补上，且老数据那一行要保留原样
+  const db3 = new DatabaseSync(workDb);
+  const matchRow = db3.prepare('SELECT * FROM matches WHERE id = ?').get('m1');
+  db3.close();
+  ok('给老库自动补上了新列（战报）', matchRow && 'report' in matchRow,
+    matchRow ? Object.keys(matchRow).join(',') : '（比赛记录不见了）');
+  ok('补新列后老数据原样保留',
+    matchRow?.score_a === 2 && matchRow?.score_b === 1 && matchRow?.venue === '西操场 1 号场'
+    && matchRow?.report === '');
 
   // 内容指纹：除了新加的列（默认值），原字段应逐字未变
   const db2 = new DatabaseSync(workDb);

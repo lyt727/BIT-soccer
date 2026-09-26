@@ -116,6 +116,7 @@ CREATE TABLE IF NOT EXISTS matches (
   referee_list TEXT DEFAULT '[]',
   lineup_a TEXT NOT NULL DEFAULT '{"starting":[],"substitutes":[]}',
   lineup_b TEXT NOT NULL DEFAULT '{"starting":[],"substitutes":[]}',
+  report TEXT NOT NULL DEFAULT '',
   status TEXT NOT NULL DEFAULT 'scheduled' CHECK (status IN ('scheduled','finished')),
   score_a INTEGER NOT NULL DEFAULT 0,
   score_b INTEGER NOT NULL DEFAULT 0,

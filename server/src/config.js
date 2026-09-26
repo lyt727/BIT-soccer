@@ -37,6 +37,9 @@ export const config = {
     || 'https://dashscope.aliyuncs.com/compatible-mode/v1',
   aiVisionApiKey: process.env.AI_VISION_API_KEY || '',
   aiVisionModel: process.env.AI_VISION_MODEL || 'qwen-vl-max',
+  // 战报用的文本模型：复用同一套百炼 Key 与接入地址，所以 .env 可以不动。
+  // 想换模型时再加一行 AI_TEXT_MODEL=... 即可（qwen-turbo 更便宜，qwen-max 更强）。
+  aiTextModel: process.env.AI_TEXT_MODEL || 'qwen-plus',
   aiMaxUploadBytes: Number(process.env.AI_MAX_UPLOAD_BYTES || 12 * 1024 * 1024),
   aiSimulateDelayMs: Number(process.env.AI_SIMULATE_DELAY_MS || 1600),
 
