@@ -6,7 +6,10 @@
 //   ④ 赛事结束后只有管理员可以更正
 // 测试结束会把被改动的比赛与赛事状态还原，不会污染演示数据。
 
-const BASE = process.env.API_BASE || 'http://localhost:3000';
+// 注意：测试过程会写数据，只允许对本机 / 局域网运行，禁止打线上环境。
+import { assertSafeTestTarget } from './safety.mjs';
+
+const BASE = assertSafeTestTarget(process.env.API_BASE || 'http://localhost:3000');
 let pass = 0;
 let fail = 0;
 const ok = (name, cond, extra = '') => {

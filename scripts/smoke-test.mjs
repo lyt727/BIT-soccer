@@ -1,7 +1,11 @@
 // 绿茵BIT V2 接口冒烟测试：node scripts/smoke-test.mjs
 // 前置：服务已启动，演示库已初始化（手机号验证码登录）
+// 注意：本脚本会写数据（建账号、审核报名、写比赛结果、改赛事状态），
+//       只允许对本机 / 局域网运行，禁止打线上环境。
 
-const BASE = process.env.API_BASE || 'http://localhost:3000';
+import { assertSafeTestTarget } from './safety.mjs';
+
+const BASE = assertSafeTestTarget(process.env.API_BASE || 'http://localhost:3000');
 const results = [];
 
 async function call(method, path, { token, body } = {}) {

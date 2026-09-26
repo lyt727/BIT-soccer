@@ -1,6 +1,9 @@
 // 赛制功能产品测试：单循环联赛 / 小组赛+淘汰赛 / 纯淘汰赛
 // 用法：先启动服务，再执行 node scripts/test-formats.mjs
-const BASE = process.env.API_BASE || 'http://localhost:3000';
+// 注意：本脚本会写数据（增删比赛、切换赛事状态），只允许对本机 / 局域网运行。
+import { assertSafeTestTarget } from './safety.mjs';
+
+const BASE = assertSafeTestTarget(process.env.API_BASE || 'http://localhost:3000');
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=';
 let pass = 0; let fail = 0;
