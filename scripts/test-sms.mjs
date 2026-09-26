@@ -141,10 +141,15 @@ try {
   console.error(`发送失败：${err.message}`);
   console.error('');
   console.error('常见原因：');
-  console.error('  · 签名或模板还在审核中 / 未通过 → 控制台「签名管理」「模板管理」看状态');
-  console.error('  · 模板变量与代码不一致（本系统只传 ${code}）');
-  console.error('  · 没买短信套餐包或账户余额不足 → 控制台充值 / 购买套餐');
-  console.error('  · AccessKey 没有短信权限，或用了子账号但没授权');
-  console.error('  · 手机号当天发送次数超限');
+  console.error('  · AccessKey 没有短信权限（最常见）');
+  console.error('      到 RAM 控制台 → 用户 → 找到这个 AccessKey 所属的账号 → 添加权限');
+  console.error('      授予系统策略：AliyunDysmsFullAccess');
+  console.error('      如果这个 Key 是「阿里云百炼」自动创建的（常见名字是 model-studio-user），');
+  console.error('      它默认只有大模型权限，需要另外加短信权限，或干脆新建一个专用子账号');
+  console.error('  · 主账号还没在短信服务控制台点过「开通」');
+  console.error('  · 签名或模板未通过审核 →「签名管理」「模板管理」看状态');
+  console.error('  · TEMPLATE_VARS 与「模板内容」里的变量对不上（本系统按配置逐个传）');
+  console.error('  · 没买套餐包或余额不足 → 控制台充值 / 购买套餐');
+  console.error('  · 手机号不在测试签名的白名单里，或当天发送次数超限');
   process.exit(1);
 }

@@ -92,6 +92,35 @@ function aliEncode(str) {
     .replace(/%7E/g, '~');
 }
 
+// 把阿里云返回的错误码翻译成能照着做的提示（否则只看到一串英文，很难定位）
+function aliyunHint(code, message) {
+  const s = `${code || ''} ${message || ''}`;
+  // 注意用 \bRAM\b：不加边界的话 "param" 里的 "ram" 会被误判成权限问题
+  if (/forbidden|not authorized|unauthor|no permission|denied|\bRAM\b/i.test(s)) {
+    return '（这个 AccessKey 没有短信权限：如果是 RAM 子账号，请到 RAM 控制台给它授予 AliyunDysmsFullAccess；'
+      + '如果是主账号，请确认已在短信服务控制台完成开通）';
+  }
+  if (/SIGNATURE|签名/i.test(s)) {
+    return '（签名不对：ALIYUN_SMS_SIGN_NAME 要与控制台「签名管理」里的名称完全一致）';
+  }
+  if (/TEMPLATE_PARAMETER|PARAMETER_ILLEGAL|参数/i.test(s)) {
+    return '（模板参数不匹配：ALIYUN_SMS_TEMPLATE_VARS 要和「模板内容」里的变量一一对应，个数也要一致）';
+  }
+  if (/TEMPLATE/i.test(s)) {
+    return '（模板不对：ALIYUN_SMS_TEMPLATE_CODE 要与控制台「模板管理」里显示的一致）';
+  }
+  if (/AMOUNT|BALANCE|QUOTA|arrears|欠费|余额/i.test(s)) {
+    return '（欠费或没买套餐：到短信服务控制台购买套餐包或充值）';
+  }
+  if (/MOBILE|PHONE/i.test(s)) {
+    return '（手机号有问题：格式不对，或该号码不在测试签名的白名单里）';
+  }
+  if (/LIMIT|FREQUENCY/i.test(s)) {
+    return '（触发频率限制：同一号码当天发送次数超限，等一会儿或换号码测试）';
+  }
+  return '';
+}
+
 async function sendAliyun(phone, code) {
   const { accessKeyId, accessKeySecret, signName, templateCode, regionId } = config.aliyunSms;
   if (!accessKeyId || !accessKeySecret || !signName || !templateCode) {
@@ -134,7 +163,8 @@ async function sendAliyun(phone, code) {
   const res = await fetch(url, { signal: AbortSignal.timeout(15000) });
   const data = await res.json().catch(() => ({}));
   if (!res.ok || data?.Code !== 'OK') {
-    throw smsError(`阿里云短信发送失败：${data?.Message || res.status}`);
+    throw smsError(`阿里云短信发送失败（${data?.Code || res.status}）：`
+      + `${data?.Message || ''}${aliyunHint(data?.Code, data?.Message)}`);
   }
   return { provider: 'aliyun', requestId: data?.RequestId || '' };
 }
