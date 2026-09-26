@@ -145,8 +145,8 @@ async function aliyunRpc(action, actionParams = {}, {
     Version: version,
     ...actionParams,
   };
-  // 短信接口才有 RegionId 这个参数，STS 没有
-  if (smsHint) params.RegionId = regionId;
+  // 短信接口才带 RegionId（公共参数，SDK 默认都带）；配成空则不发送。STS 没有这个参数
+  if (smsHint && regionId) params.RegionId = regionId;
   const query = Object.keys(params).sort()
     .map((k) => `${aliEncode(k)}=${aliEncode(params[k])}`).join('&');
   const stringToSign = `POST&%2F&${aliEncode(query)}`;
@@ -162,7 +162,8 @@ async function aliyunRpc(action, actionParams = {}, {
   if (!res.ok || data?.Code !== 'OK') {
     const head = action === 'SendSms' ? '阿里云短信发送失败' : `阿里云接口 ${action} 调用失败`;
     const err = smsError(`${head}（${data?.Code || res.status}）：`
-      + `${data?.Message || ''}${smsHint ? aliyunHint(data?.Code, data?.Message) : ''}`);
+      + `${data?.Message || ''}${smsHint ? aliyunHint(data?.Code, data?.Message) : ''}`
+      + `${data?.RequestId ? `（RequestId: ${data.RequestId}，报给阿里云技术支持时用得上）` : ''}`);
     err.aliyun = data;
     throw err;
   }
@@ -223,12 +224,17 @@ async function sendAliyun(phone, code) {
     else if (['min', 'mins', 'minute', 'minutes'].includes(name)) templateParam[name] = minutes;
     // 其它未知变量无法提供值：交给阿里云在返回里报错，比悄悄发一条内容不对的短信好
   }
+  // 手机号参数名按官方 2017-05-25 接口定义用 PhoneNumbers（复数）。
+  // 默认不再自己加 PhoneNumber（单数）——参数表里没有它，保持和官方一致；
+  // 若你手上的文档写的是单数，把 ALIYUN_SMS_PHONE_PARAM 改成 PhoneNumber 或 both 即可。
+  const phoneParam = String(config.aliyunSms.phoneParam || 'PhoneNumbers').trim();
+  const phoneFields = phoneParam === 'both'
+    ? { PhoneNumbers: phone, PhoneNumber: phone }
+    : phoneParam === 'PhoneNumber'
+      ? { PhoneNumber: phone }
+      : { PhoneNumbers: phone };
   return aliyunRpc('SendSms', {
-    // 阿里云文档在不同版本里出现过 PhoneNumbers 和 PhoneNumber 两种写法，
-    // 这里两个都带上（值相同）。RPC 接口会忽略它不认识的参数，
-    // 多传一个不会报错，能避免因为文档版本不同而卡在"参数缺失"上。
-    PhoneNumbers: phone,
-    PhoneNumber: phone,
+    ...phoneFields,
     SignName: signName,
     TemplateCode: templateCode,
     TemplateParam: JSON.stringify(templateParam),

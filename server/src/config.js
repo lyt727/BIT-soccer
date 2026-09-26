@@ -75,7 +75,14 @@ export const config = {
     // 例：模板内容「验证码为${code}，${min}分钟内有效」→ 这里写 code,min
     // （阿里云赠送的「登录/注册模板」100001 就是 code + min 两个变量）
     templateVars: process.env.ALIYUN_SMS_TEMPLATE_VARS || 'code,min',
-    regionId: process.env.ALIYUN_SMS_REGION_ID || 'cn-hangzhou',
+    // 手机号参数名：官方 2017-05-25 接口定义里叫 PhoneNumbers（复数，支持逗号分隔多个号码）。
+    // 万一你手上的文档版本写的是 PhoneNumber（单数），可以在这里改成 PhoneNumber 或 both，
+    // 不用改代码。默认按官方接口定义走。
+    phoneParam: process.env.ALIYUN_SMS_PHONE_PARAM || 'PhoneNumbers',
+    // 接口地域。各语言 SDK 默认都会带这个公共参数；在 .env 里留空则不发送它
+    regionId: process.env.ALIYUN_SMS_REGION_ID !== undefined
+      ? process.env.ALIYUN_SMS_REGION_ID
+      : 'cn-hangzhou',
   },
 
   corsOrigin: process.env.CORS_ORIGIN || '*',
