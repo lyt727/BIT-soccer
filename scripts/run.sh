@@ -42,8 +42,13 @@ if [ ! -f "$DATA_DIR/greensinbit.db" ]; then
 fi
 
 run_in_container() {
+  # 把 .env 一起带进去：短信开关、AI 密钥这些配置和线上服务保持一致；
+  # 下面 -e 指定的数据路径优先级更高，会把 .env 里可能存在的同名项覆盖掉。
+  local envArgs=()
+  if [ -f "$PWD/.env" ]; then envArgs=(--env-file "$PWD/.env"); fi
   exec docker run --rm \
     -v "$PWD:/app" -w /app \
+    "${envArgs[@]}" \
     -e DB_FILE=/app/data/greensinbit.db \
     -e UPLOAD_DIR=/app/data/uploads \
     -e BACKUP_DIR=/app/data/backups \

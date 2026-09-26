@@ -1,3 +1,7 @@
+// 必须在读取任何配置之前先把仓库根目录的 .env 读进 process.env。
+// 静态导入保证求值顺序：本行先于下面的 config 定义执行。
+// （已存在的真实环境变量优先，不会被 .env 覆盖；容器里没有 .env 文件也不影响。）
+import './env.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

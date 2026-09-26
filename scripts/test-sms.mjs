@@ -9,6 +9,7 @@
 // 只发短信、不碰数据库，可以放心对线上跑。
 // =============================================================
 import crypto from 'node:crypto';
+// config.js 会自己先加载仓库根目录的 .env，这里直接读到的就是真实配置
 import { config } from '../server/src/config.js';
 import { resolveSmsProvider, sendSmsCode } from '../server/src/services/sms.js';
 
