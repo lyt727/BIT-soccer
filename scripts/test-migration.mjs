@@ -128,6 +128,7 @@ console.log('【一、模拟老库升级】');
   // 模拟"还没有战报列"的老库：把这次新加的两列都删掉，看升级能不能原样加回来
   db.exec('ALTER TABLE matches DROP COLUMN report;');
   db.exec('ALTER TABLE matches DROP COLUMN report_regen_count;');
+  db.exec('ALTER TABLE events DROP COLUMN players_per_side;');
   for (let i = 1; i <= 5; i += 1) {
     db.prepare(`INSERT INTO player_suspensions
       (id, event_id, registration_id, team_name, player, player_no, reason, note, status,
@@ -163,6 +164,9 @@ console.log('【一、模拟老库升级】');
     matchRow ? Object.keys(matchRow).join(',') : '（比赛记录不见了）');
   ok('给老库自动补上了新列（重新生成次数）',
     matchRow && 'report_regen_count' in matchRow && matchRow.report_regen_count === 0);
+  const evRow = new DatabaseSync(workDb).prepare('SELECT players_per_side FROM events WHERE id = ?').get('e1');
+  ok('给老库自动补上了新列（每队上场人数，默认 11）', evRow?.players_per_side === 11,
+    `players_per_side=${evRow?.players_per_side}`);
   ok('补新列后老数据原样保留',
     matchRow?.score_a === 2 && matchRow?.score_b === 1 && matchRow?.venue === '西操场 1 号场'
     && matchRow?.report === '');

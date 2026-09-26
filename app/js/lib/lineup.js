@@ -127,10 +127,13 @@ export function bench(state) {
 }
 
 // 与后端同一条规则：首发非空时，队长与守门员各恰好一名
-export function validateLineup(state, teamLabel = '球队') {
+export function validateLineup(state, teamLabel = '球队', limit = 11) {
   const errors = [];
   const list = starters(state).filter((r) => r.name || r.no);
   if (list.length) {
+    if (list.length > limit) {
+      errors.push(`${teamLabel}首发最多 ${limit} 人（当前 ${list.length} 人）`);
+    }
     const captains = list.filter((r) => r.captain).length;
     const keepers = list.filter((r) => r.gk).length;
     if (captains !== 1) errors.push(`${teamLabel}首发里必须有且只有 1 名队长（当前 ${captains} 名）`);

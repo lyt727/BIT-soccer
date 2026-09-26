@@ -185,9 +185,13 @@ function cleanLineup(v) {
 // 首发名单非空时：必须有且只有 1 名队长、1 名守门员（与前端同一条规则；
 // 后端再拦一道，防止绕过界面写进不合规的名单）。
 // 队长只允许出现在首发；守门员可以出现在替补（备选门将），不影响这条校验。
-function assertLineupFlags(lineup, teamLabel) {
+function assertLineupFlags(lineup, teamLabel, limit = 11) {
   const starters = (lineup.starting || []).filter((p) => p.name || p.no);
   if (!starters.length) return; // 还没填首发名单，不校验
+  if (starters.length > limit) {
+    throw badRequest(`${teamLabel}首发最多 ${limit} 人（当前 ${starters.length} 人）；`
+      + '每队上场人数在赛事设置里调整');
+  }
   const captains = starters.filter((p) => p.captain).length;
   const keepers = starters.filter((p) => p.gk).length;
   if (captains !== 1) {
@@ -199,6 +203,12 @@ function assertLineupFlags(lineup, teamLabel) {
   if ((lineup.substitutes || []).some((p) => p.captain)) {
     throw badRequest(`${teamLabel}的队长必须出现在首发名单里`);
   }
+}
+
+// 每队上场人数（首发上限）来自赛事设置，默认十一人制
+function playersPerSideOf(event) {
+  const n = Number(event?.players_per_side);
+  return Number.isInteger(n) && n >= 3 && n <= 11 ? n : 11;
 }
 
 const KNOCKOUT_ROUNDS = ['1/8决赛', '1/4决赛', '半决赛', '三四名决赛', '决赛'];
@@ -345,12 +355,12 @@ export function registerMatchRoutes(router) {
     }
       if (body.lineupA !== undefined) {
         const lineupA = cleanLineup(body.lineupA);
-        assertLineupFlags(lineupA, '主队');
+        assertLineupFlags(lineupA, '主队', playersPerSideOf(event));
         next.lineup_a = JSON.stringify(lineupA);
       }
       if (body.lineupB !== undefined) {
         const lineupB = cleanLineup(body.lineupB);
-        assertLineupFlags(lineupB, '客队');
+        assertLineupFlags(lineupB, '客队', playersPerSideOf(event));
         next.lineup_b = JSON.stringify(lineupB);
       }
       const keys = Object.keys(next);
@@ -532,12 +542,12 @@ export function registerMatchRoutes(router) {
     }
       if (body.lineupA !== undefined) {
         const lineupA = cleanLineup(body.lineupA);
-        assertLineupFlags(lineupA, '主队');
+        assertLineupFlags(lineupA, '主队', playersPerSideOf(event));
         next.lineup_a = JSON.stringify(lineupA);
       }
       if (body.lineupB !== undefined) {
         const lineupB = cleanLineup(body.lineupB);
-        assertLineupFlags(lineupB, '客队');
+        assertLineupFlags(lineupB, '客队', playersPerSideOf(event));
         next.lineup_b = JSON.stringify(lineupB);
       }
 
@@ -752,12 +762,12 @@ export function registerMatchRoutes(router) {
       let lineupBJson = match.lineup_b;
       if (body.lineupA !== undefined) {
         const lineupA = cleanLineup(body.lineupA);
-        assertLineupFlags(lineupA, '主队');
+        assertLineupFlags(lineupA, '主队', playersPerSideOf(event));
         lineupAJson = JSON.stringify(lineupA);
       }
       if (body.lineupB !== undefined) {
         const lineupB = cleanLineup(body.lineupB);
-        assertLineupFlags(lineupB, '客队');
+        assertLineupFlags(lineupB, '客队', playersPerSideOf(event));
         lineupBJson = JSON.stringify(lineupB);
       }
 

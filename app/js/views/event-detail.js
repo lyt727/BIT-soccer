@@ -122,6 +122,12 @@ function openEventEdit(event) {
           }, '小组赛 + 淘汰赛'),
           el('option', { value: 'league', selected: event.format === 'league' }, '单循环联赛'),
           el('option', { value: 'knockout', selected: event.format === 'knockout' }, '纯淘汰赛'))),
+      el('label', { class: 'field' },
+        el('span', {}, '每队上场人数（首发上限，3–11 人）'),
+        el('select', { id: 'evt-players' },
+          Array.from({ length: 9 }, (_, i) => i + 3).map((n) => el('option', {
+            value: String(n), selected: n === (Number(event.playersPerSide) || 11),
+          }, `${n} 人${n === 11 ? '（十一人制）' : n === 7 ? '（七人制）' : n === 5 ? '（五人制）' : ''}`)))),
     ),
   });
   const submit = async () => {
@@ -132,6 +138,7 @@ function openEventEdit(event) {
           name: modal.body.querySelector('#evt-name').value.trim(),
           description: modal.body.querySelector('#evt-desc').value.trim(),
           format: modal.body.querySelector('#evt-format').value,
+          playersPerSide: Number(modal.body.querySelector('#evt-players').value),
         },
       });
       modal.close();

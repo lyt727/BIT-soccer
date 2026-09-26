@@ -23,6 +23,7 @@ CREATE TABLE IF NOT EXISTS events (
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','signup','live','ended')),
   format TEXT NOT NULL DEFAULT 'group_knockout',
   yellow_suspension_threshold INTEGER NOT NULL DEFAULT 2,
+  players_per_side INTEGER NOT NULL DEFAULT 11,
   created_by TEXT NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL
 );

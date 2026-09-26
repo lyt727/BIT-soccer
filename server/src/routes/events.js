@@ -40,6 +40,8 @@ async function eventView(db, event, user) {
   );
   return {
     ...event,
+    // 每队上场人数（首发上限），前端按这个名字读
+    playersPerSide: Number(event.players_per_side) || 11,
     statusText: STATUS_TEXT[event.status] || event.status,
     approvedTeams: reg.approved || 0,
     pendingRegistrations: reg.pending || 0,
@@ -54,6 +56,19 @@ async function eventView(db, event, user) {
 
 // 赛制：league 单循环联赛 / group_knockout 小组赛+淘汰赛 / knockout 纯淘汰赛
 const EVENT_FORMATS = ['league', 'group_knockout', 'knockout'];
+
+// 每队上场人数（首发上限）：管理员在赛事里选，范围 3–11（五人制 5、七人制 7、十一人制 11…）
+const PLAYERS_PER_SIDE_MIN = 3;
+const PLAYERS_PER_SIDE_MAX = 11;
+function normalizePlayersPerSide(value, fallback = 11) {
+  if (value === undefined || value === null || value === '') return fallback;
+  const n = Number(value);
+  if (!Number.isInteger(n) || n < PLAYERS_PER_SIDE_MIN || n > PLAYERS_PER_SIDE_MAX) {
+    throw badRequest(`每队上场人数需为 ${PLAYERS_PER_SIDE_MIN}–${PLAYERS_PER_SIDE_MAX} 之间的整数`);
+  }
+  return n;
+}
+
 function normalizeFormat(value) {
   const f = String(value || '').trim();
   if (!f) return 'group_knockout';
@@ -79,15 +94,17 @@ export function registerEventRoutes(router) {
     const season = String(body.season || '').trim();
     const description = String(body.description || '').trim();
     const format = normalizeFormat(body.format);
+    const playersPerSide = normalizePlayersPerSide(body.playersPerSide, 11);
     if (!name) throw badRequest('请填写赛事名称');
     if (!/^\d{4}$/.test(season)) throw badRequest('赛季年份需为 4 位数字，如 2026');
     const db = getDb();
     const id = uid('evt_');
     const now = nowIso();
     await db.run(
-      `INSERT INTO events (id, name, season, description, format, status, created_by, created_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`,
-      [id, name, season, description, format, user.id, now],
+      `INSERT INTO events (id, name, season, description, format, players_per_side,
+                           status, created_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+      [id, name, season, description, format, playersPerSide, user.id, now],
     );
     if (user.role === 'admin') {
       await db.run(
@@ -96,7 +113,8 @@ export function registerEventRoutes(router) {
         [id, user.id, user.id, now],
       );
     }
-    await audit(db, user, 'event.create', 'event', id, { name, season, format }, clientIp(req));
+    await audit(db, user, 'event.create', 'event', id,
+      { name, season, format, playersPerSide }, clientIp(req));
     const created = await db.get('SELECT * FROM events WHERE id = ?', [id]);
     sendJson(res, 201, await eventView(db, created, user));
   });
@@ -135,6 +153,9 @@ export function registerEventRoutes(router) {
     const description = body.description !== undefined
       ? String(body.description).trim() : event.description;
     const format = body.format !== undefined ? normalizeFormat(body.format) : event.format;
+    const playersPerSide = normalizePlayersPerSide(
+      body.playersPerSide, Number(event.players_per_side) || 11,
+    );
     // 已有赛程时不允许改赛制，避免出现小组赛与联赛混排
     if (format !== (event.format || 'group_knockout')) {
       const mt = await db.get('SELECT COUNT(*) AS n FROM matches WHERE event_id = ?', [event.id]);
@@ -152,11 +173,11 @@ export function registerEventRoutes(router) {
     }
     await db.run(
       `UPDATE events SET name = ?, season = ?, description = ?, format = ?,
-         yellow_suspension_threshold = ? WHERE id = ?`,
-      [name, season, description, format, threshold, event.id],
+         yellow_suspension_threshold = ?, players_per_side = ? WHERE id = ?`,
+      [name, season, description, format, threshold, playersPerSide, event.id],
     );
     await audit(db, user, 'event.update', 'event', event.id,
-      { name, season, format, yellowThreshold: threshold }, clientIp(req));
+      { name, season, format, yellowThreshold: threshold, playersPerSide }, clientIp(req));
     const fresh = await db.get('SELECT * FROM events WHERE id = ?', [event.id]);
     sendJson(res, 200, await eventView(db, fresh, user));
   });

@@ -87,9 +87,10 @@ export async function openMatchEditor({ event, matches = [], match = null, aiRes
 
   const save = async () => {
     // 首发名单必须正好 1 名守门员 + 1 名队长（后端也会再校验一次）
+    const limit = Number(event.playersPerSide) || 11;
     const lineupErrors = [
-      ...validateLineup(state.lineup.A, '主队').errors,
-      ...validateLineup(state.lineup.B, '客队').errors,
+      ...validateLineup(state.lineup.A, '主队', limit).errors,
+      ...validateLineup(state.lineup.B, '客队', limit).errors,
     ];
     if (lineupErrors.length) {
       toast(lineupErrors.join('；'), 'error', 5200);
@@ -289,10 +290,11 @@ function buildForm(event, state, redraw) {
         ? '本场已完赛；改动比分与事件后保存即时生效。'
         : '比分留空表示本场尚未开赛；填写比分并保存后本场标记为「已完赛」。'),
     el('div', { class: 'section-title lv2' }, '双方名单'),
-    el('div', { class: 'me-note' }, '© 队长　🧤 守门员'),
+    el('div', { class: 'me-note' },
+      `© 队长　🧤 守门员　首发最多 ${Number(event.playersPerSide) || 11} 人（在赛事设置里调整）`),
     el('div', { class: 'grid cols-2 me-grid' },
-      lineupTeamBlock('A', match.teamA.name, state.lineup.A),
-      lineupTeamBlock('B', match.teamB.name, state.lineup.B)),
+      lineupTeamBlock('A', match.teamA.name, state.lineup.A, Number(event.playersPerSide) || 11),
+      lineupTeamBlock('B', match.teamB.name, state.lineup.B, Number(event.playersPerSide) || 11)),
     el('div', { class: 'section-title lv2' }, '主队进球球员'),
     goalsA,
     el('div', { class: 'section-title lv2' }, '客队进球球员'),
@@ -336,7 +338,7 @@ function buildForm(event, state, redraw) {
 const byNo = (a, b) => (parseInt(a.no, 10) || 999) - (parseInt(b.no, 10) || 999)
   || String(a.name).localeCompare(String(b.name), 'zh-Hans-CN');
 
-function lineupTeamBlock(side, teamName, teamState) {
+function lineupTeamBlock(side, teamName, teamState, limit = 11) {
   const root = el('div', { class: 'lineup-side', dataset: { side } });
   const counters = el('div', { class: 'lp-counters small' });
   const lists = el('div', { class: 'lp-lists' });
@@ -359,12 +361,12 @@ function lineupTeamBlock(side, teamName, teamState) {
     const idle = teamState.rows.filter((r) => r.status === 'none').sort(byNo);
     const captains = start.filter((r) => r.captain).length;
     const keepers = start.filter((r) => r.gk).length;
-    const okFlags = !start.length || (captains === 1 && keepers === 1);
+    const okFlags = !start.length || (captains === 1 && keepers === 1 && start.length <= limit);
     clear(counters);
     counters.className = `lp-counters small ${okFlags ? 'muted' : 'lp-warn'}`;
     counters.append(el('span', {},
-      `首发 ${start.length} 人 · 替补 ${benchRows.length} 人 · © ${captains} · 🧤 ${keepers}`
-      + (okFlags ? '' : '　首发必须有且只有 1 名守门员、1 名队长')));
+      `首发 ${start.length}/${limit} 人 · 替补 ${benchRows.length} 人 · © ${captains} · 🧤 ${keepers}`
+      + (okFlags ? '' : '　首发要有且只有 1 名守门员、1 名队长，且不超过上限')));
     // 只有两栏：首发、替补。下拉选「－」的人（未列入本场名单）跟在替补栏里，
     // 样式淡化以示区别，但保存时不会写进替补名单。
     lists.append(

@@ -198,6 +198,49 @@ const playerDenied = await call('PATCH', `/api/matches/${m.id}/full`, {
 });
 ok('参赛球员改名单被拒绝(403)', playerDenied.status === 403, `status=${playerDenied.status}`);
 
+// ⑥ 每队上场人数（首发上限）由赛事设置决定，管理员可选 3–11
+const evtBefore = (await call('GET', '/api/events/evt_demo1', { token: adminToken })).data;
+const originalLimit = Number(evtBefore?.playersPerSide) || 11;
+ok('赛事返回每队上场人数（默认 11）', Number.isInteger(evtBefore?.playersPerSide),
+  `playersPerSide=${evtBefore?.playersPerSide}`);
+const badLimit = await call('PATCH', '/api/events/evt_demo1',
+  { token: adminToken, body: { playersPerSide: 12 } });
+ok('每队上场人数超出 3–11 → 拒绝(400)',
+  badLimit.status === 400 && String(badLimit.data?.error || '').includes('3–11'), badLimit.data?.error);
+const setSeven = await call('PATCH', '/api/events/evt_demo1',
+  { token: adminToken, body: { playersPerSide: 7 } });
+ok('管理员可以把赛事设成 7 人制', setSeven.status === 200 && setSeven.data?.playersPerSide === 7,
+  `playersPerSide=${setSeven.data?.playersPerSide}`);
+const eightStarters = await call('PATCH', `/api/matches/${m.id}/full`, {
+  token: adminToken,
+  body: baseBody({
+    lineupA: {
+      color: '红白',
+      starting: [p(playersA[0], { gk: true }), p(playersA[1], { captain: true }),
+        ...playersA.slice(2, 8).map((x) => p(x))],
+      substitutes: [],
+    },
+  }),
+});
+ok('7 人制赛事里首发 8 人 → 拒绝(400)',
+  eightStarters.status === 400 && String(eightStarters.data?.error || '').includes('最多 7 人'),
+  eightStarters.data?.error);
+const sevenStarters = await call('PATCH', `/api/matches/${m.id}/full`, {
+  token: adminToken,
+  body: baseBody({
+    lineupA: {
+      color: '红白',
+      starting: [p(playersA[0], { gk: true }), p(playersA[1], { captain: true }),
+        ...playersA.slice(2, 7).map((x) => p(x))],
+      substitutes: [],
+    },
+  }),
+});
+ok('7 人制赛事里首发 7 人 → 通过(200)', sevenStarters.status === 200, sevenStarters.data?.error || '');
+await call('PATCH', '/api/events/evt_demo1', { token: adminToken, body: { playersPerSide: originalLimit } });
+ok('每队上场人数已还原',
+  (await call('GET', '/api/events/evt_demo1', { token: adminToken })).data?.playersPerSide === originalLimit);
+
 // 还原：把名单恢复成测试前的样子。
 // 注意：老数据（这套演示数据就是）的首发名单里没有守门员/队长标记，
 // 直接原样存回去会被新规则拦下，所以还原时给首发补上默认标记

@@ -32,6 +32,8 @@ class SqliteStore {
     }
     this.addColumnIfMissing('events', 'yellow_suspension_threshold', 'INTEGER NOT NULL DEFAULT 2');
     this.addColumnIfMissing('events', 'format', "TEXT NOT NULL DEFAULT 'group_knockout'");
+    // 每队上场人数（首发上限）：十一人制 11、七人制 7、五人制 5…由管理员在赛事里选
+    this.addColumnIfMissing('events', 'players_per_side', 'INTEGER NOT NULL DEFAULT 11');
     this.addColumnIfMissing('matches', 'round_name', "TEXT NOT NULL DEFAULT ''");
     this.addColumnIfMissing('matches', 'report', "TEXT NOT NULL DEFAULT ''");
     this.addColumnIfMissing('matches', 'report_regen_count', 'INTEGER NOT NULL DEFAULT 0');

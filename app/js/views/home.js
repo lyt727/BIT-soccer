@@ -113,6 +113,12 @@ async function addEventModal(page, events) {
           el('option', { value: 'group_knockout', selected: true }, '小组赛 + 淘汰赛'),
           el('option', { value: 'league' }, '单循环联赛'),
           el('option', { value: 'knockout' }, '纯淘汰赛'))),
+      el('label', { class: 'field' },
+        el('span', { class: 'required' }, '每队上场人数'),
+        el('select', { id: 'evt-players' },
+          Array.from({ length: 9 }, (_, i) => i + 3).map((n) => el('option', {
+            value: String(n), selected: n === 11,
+          }, `${n} 人${n === 11 ? '（十一人制）' : n === 7 ? '（七人制）' : n === 5 ? '（五人制）' : ''}`)))),
       field('赛事描述（选填）', { id: 'evt-desc', tag: 'textarea', placeholder: '赛制、参赛范围等说明' }),
     ),
   });
@@ -121,10 +127,11 @@ async function addEventModal(page, events) {
     const season = modal.body.querySelector('#evt-season').value.trim();
     const description = modal.body.querySelector('#evt-desc').value.trim();
     const format = modal.body.querySelector('#evt-format').value;
+    const playersPerSide = Number(modal.body.querySelector('#evt-players').value);
     try {
       const created = await api('/events', {
         method: 'POST',
-        body: { name, season, description, format },
+        body: { name, season, description, format, playersPerSide },
       });
       modal.close();
       toast('赛事创建成功', 'success');
