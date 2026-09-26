@@ -46,6 +46,10 @@ export const config = {
     : process.env.NODE_ENV !== 'production',
   // 演示账号（以及历史无密码账号）的初始密码，可用 DEMO_PASSWORD 覆盖
   demoPassword: process.env.DEMO_PASSWORD || '123456',
+  // 按手机号指定角色（短信上线后认证管理员用；写成 "手机号" 或 "手机号:姓名"，
+  // 多个用逗号分隔）。只做「补建账号 + 提升角色」，绝不删人、不降级、不覆盖姓名密码。
+  adminPhones: process.env.ADMIN_PHONES || '',
+  dataOperatorPhones: process.env.DATA_OPERATOR_PHONES || '',
   smsCodeTtlSeconds: Number(process.env.SMS_CODE_TTL_SECONDS || 300),
   smsResendSeconds: Number(process.env.SMS_RESEND_SECONDS || 60),
   smsWebhookUrl: process.env.SMS_WEBHOOK_URL || '',

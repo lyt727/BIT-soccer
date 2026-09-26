@@ -12,6 +12,7 @@ import { registerStatsRoutes } from './routes/stats.js';
 import { registerAiRoutes } from './routes/ai.js';
 import { registerAuditRoutes } from './routes/audit.js';
 import { sendJson } from './http.js';
+import { syncPhoneRoles } from './phoneRoles.js';
 
 async function main() {
   await ensureDb();
@@ -19,6 +20,12 @@ async function main() {
   const isSqlite = config.dbDriver === 'sqlite';
   if (isSqlite && seedIfEmpty(db)) {
     console.log(`[seed] 已写入演示数据（手机号 + 密码登录，初始密码 ${config.demoPassword}）`);
+  }
+  // 按 .env 里的 ADMIN_PHONES / DATA_OPERATOR_PHONES 认证管理人员（只做加法）
+  const roleChanges = await syncPhoneRoles(db);
+  if (roleChanges.length) {
+    console.log('[roles] 已按 ADMIN_PHONES / DATA_OPERATOR_PHONES 同步：');
+    for (const line of roleChanges) console.log(`  · ${line}`);
   }
 
   const router = new ApiRouter();
