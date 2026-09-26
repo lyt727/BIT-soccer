@@ -125,8 +125,9 @@ console.log('【一、模拟老库升级】');
       VALUES ('m1', 'e1', 'r1', 'r2', '2026-09-01', '15:30', '西操场 1 号场', 'finished', 2, 1, 'u1', ?)`).run(now);
   db.prepare(`INSERT INTO match_goals (id, match_id, side, player, player_no, goal_time, is_penalty)
               VALUES ('g1', 'm1', 'A', '同学甲', '9', ?, 0)`).run("23'");
-  // 模拟"还没有战报列"的老库：把这次新加的列删掉，看升级能不能原样加回来
+  // 模拟"还没有战报列"的老库：把这次新加的两列都删掉，看升级能不能原样加回来
   db.exec('ALTER TABLE matches DROP COLUMN report;');
+  db.exec('ALTER TABLE matches DROP COLUMN report_regen_count;');
   for (let i = 1; i <= 5; i += 1) {
     db.prepare(`INSERT INTO player_suspensions
       (id, event_id, registration_id, team_name, player, player_no, reason, note, status,
@@ -160,6 +161,8 @@ console.log('【一、模拟老库升级】');
   db3.close();
   ok('给老库自动补上了新列（战报）', matchRow && 'report' in matchRow,
     matchRow ? Object.keys(matchRow).join(',') : '（比赛记录不见了）');
+  ok('给老库自动补上了新列（重新生成次数）',
+    matchRow && 'report_regen_count' in matchRow && matchRow.report_regen_count === 0);
   ok('补新列后老数据原样保留',
     matchRow?.score_a === 2 && matchRow?.score_b === 1 && matchRow?.venue === '西操场 1 号场'
     && matchRow?.report === '');

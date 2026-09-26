@@ -116,11 +116,8 @@ function matchCard(m, isAdmin, event, matches, canAi) {
         canAi ? btn('🤖 AI 识图', {
           type: 'accent', cls: 'sm', onClick: () => openAiFlow(event, matches, null, m.id),
         }) : null,
-        m.report ? btn('📝 战报', {
-          type: 'outline', cls: 'sm', onClick: () => showReportModal(m),
-        }) : null,
-        canManage ? btn(m.report ? '📝 重新生成战报' : '📝 AI 生成战报', {
-          type: 'outline', cls: 'sm', onClick: () => generateReport(m),
+        (canManage || m.report) ? btn(m.report ? '📝 战报' : '📝 AI 生成战报', {
+          type: 'outline', cls: 'sm', onClick: () => openReportFlow(m, canManage),
         }) : null,
         // 特殊情况说明的快捷入口（内容同样在「编辑」统一界面里可改）
         canManage ? btn('✎ 特殊情况说明', {
@@ -131,42 +128,17 @@ function matchCard(m, isAdmin, event, matches, canAi) {
 }
 
 // ---------------- AI 战报 ----------------
-// 只读查看：所有人（含参赛队员）都能看
-function showReportModal(m, extra = {}) {
-  const text = m.report || '';
-  const box = openModal({
-    title: `战报 · ${m.teamA.name} vs ${m.teamB.name}`,
-    body: el('div', {},
-      extra.source
-        ? el('div', { class: 'small muted', style: { marginBottom: '8px' } },
-          extra.source === 'ai'
-            ? `由 ${extra.model || 'AI'} 生成，可在「编辑比赛信息」里修改`
-            : '由本地模板生成（未配置 AI 或调用失败），可在「编辑比赛信息」里修改')
-        : null,
-      text
-        ? el('div', { class: 'card', style: { whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '14px' } }, text)
-        : el('div', { class: 'empty' }, '暂无战报', '📝')),
-  });
-  box.setFoot([
-    text ? btn('复制', {
-      onClick: async () => {
-        try {
-          await navigator.clipboard.writeText(text);
-          toast('战报已复制', 'success');
-        } catch {
-          toast('复制失败，请手动选择文本', 'error');
-        }
-      },
-    }) : null,
-    btn('关闭', {
-      type: 'primary',
-      onClick: () => { box.close(); if (extra.source) reloadKeepingScroll(); },
-    }),
-  ].filter(Boolean));
-}
-
-// 生成：未完赛先弹窗提示；已完赛才调接口（管理员 / 数据录入员）
-async function generateReport(m) {
+// 一个入口：没战报就生成，有战报就直接看（管理员/数据录入员还能就地编辑、复制、重新生成）。
+// 重新生成每场只允许一次，这条限制在后端把关。
+function openReportFlow(m, canManage) {
+  if (!canManage) {
+    showReportModal(m);   // 参赛队员：只读
+    return;
+  }
+  if (m.report) {
+    openReportEditor(m);
+    return;
+  }
   if (m.status !== 'finished') {
     const tip = openModal({
       title: '无法生成战报',
@@ -178,6 +150,10 @@ async function generateReport(m) {
     tip.setFoot([btn('知道了', { type: 'primary', onClick: () => tip.close() })]);
     return;
   }
+  generateReport(m);
+}
+
+async function generateReport(m) {
   const modal = openModal({
     title: '正在生成战报…',
     body: el('div', { class: 'progress' },
@@ -189,11 +165,90 @@ async function generateReport(m) {
     toast(fresh.reportSource === 'ai'
       ? `战报已生成（${fresh.reportModel}）`
       : '战报已生成（本地模板）', 'success', 3200);
-    showReportModal(fresh, { source: fresh.reportSource, model: fresh.reportModel });
+    openReportEditor(fresh, true);
   } catch (err) {
     modal.close();
     toast(err.message, 'error', 4200);
   }
+}
+
+// 参赛队员看到的：只有正文和一个复制按钮
+function showReportModal(m) {
+  const text = m.report || '';
+  const box = openModal({
+    title: `战报 · ${m.teamA.name} vs ${m.teamB.name}`,
+    body: el('div', {},
+      text
+        ? el('div', { class: 'card', style: { whiteSpace: 'pre-wrap', lineHeight: '1.8', fontSize: '14px' } }, text)
+        : el('div', { class: 'empty' }, '暂无战报', '📝')),
+  });
+  box.setFoot([
+    text ? copyReportButton(text) : null,
+    btn('关闭', { type: 'primary', onClick: () => box.close() }),
+  ].filter(Boolean));
+}
+
+function copyReportButton(getText) {
+  return btn('复制', {
+    onClick: async () => {
+      try {
+        await navigator.clipboard.writeText(typeof getText === 'function' ? getText() : getText);
+        toast('战报已复制', 'success');
+      } catch {
+        toast('复制失败，请手动选择文本', 'error');
+      }
+    },
+  });
+}
+
+// 管理员 / 数据录入员：看得见正文、能就地改、能复制、能重新生成一次
+function openReportEditor(m, isNew = false) {
+  let dirty = false;
+  let regenCount = Number(m.reportRegenCount) || 0;
+  const sourceLine = m.reportSource === 'ai' ? `由 ${m.reportModel || 'AI'} 生成`
+    : (isNew ? '由本地模板生成（未配置 AI 或调用失败）' : '');
+  const area = el('textarea', {
+    id: 'report-text', rows: 9,
+    style: { lineHeight: '1.7' },
+    placeholder: '（暂无战报）',
+  }, m.report || '');
+  const hint = el('div', { class: 'me-hint' },
+    regenCount >= 1
+      ? '这场比赛已经重新生成过一次，还想改动请直接编辑上面的正文。'
+      : '点「AI 生成战报」会生成新的内容，覆盖上面的正文（每场比赛只允许重新生成一次）。');
+  const box = openModal({
+    title: `战报 · ${m.teamA.name} vs ${m.teamB.name}`,
+    body: el('div', {},
+      sourceLine ? el('div', { class: 'small muted', style: { marginBottom: '6px' } }, sourceLine) : null,
+      area,
+      hint),
+  });
+  const save = async () => {
+    try {
+      await api(`/matches/${m.id}/report`, { method: 'PATCH', body: { report: area.value } });
+      dirty = true;
+      box.close();
+      toast('战报已保存', 'success');
+      reloadKeepingScroll();
+    } catch (err) { toast(err.message, 'error', 3800); }
+  };
+  const regenerate = async () => {
+    const okToGo = await confirmBox(
+      '重新生成会用新内容覆盖当前正文，且每场比赛只允许重新生成一次。确定继续？',
+      { title: '重新生成战报', okText: '重新生成' },
+    );
+    if (!okToGo) return;
+    box.close();
+    generateReport(m);
+  };
+  box.setFoot([
+    copyReportButton(() => area.value),
+    regenCount < 1 ? btn('重新生成', { onClick: regenerate }) : null,
+    btn('保存', { type: 'primary', onClick: save }),
+    btn('关闭', {
+      onClick: () => { box.close(); if (dirty) reloadKeepingScroll(); },
+    }),
+  ].filter(Boolean));
 }
 
 // 「技术统计与时间轴」只做展示：编辑统一走每场比赛的「编辑」按钮

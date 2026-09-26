@@ -106,7 +106,12 @@ ok('返回了战报来源（AI 或本地模板）',
   ['ai', 'template'].includes(gen.data?.reportSource), gen.data?.reportSource);
 
 const gen2 = await call('POST', `/api/matches/${finished.id}/report`, { token: adminToken });
-ok('管理员可以重新生成（覆盖）', gen2.status === 200 && gen2.data?.report?.length > 10);
+ok('第一次重新生成成功（覆盖），并记下次数', gen2.status === 200
+  && gen2.data?.report?.length > 10 && gen2.data?.reportRegenCount === 1,
+  gen2.data?.error || `regenCount=${gen2.data?.reportRegenCount}`);
+const gen3 = await call('POST', `/api/matches/${finished.id}/report`, { token: adminToken });
+ok('第二次重新生成被拒绝(400)', gen3.status === 400
+  && String(gen3.data?.error || '').includes('只能重新生成一次'), gen3.data?.error || `status=${gen3.status}`);
 
 // ---- ⑤ 生成战报没有改动其它数据 ----
 ok('生成战报不改动比分', gen2.data?.scoreA === before.scoreA && gen2.data?.scoreB === before.scoreB);
@@ -116,18 +121,28 @@ ok('生成战报不改动红黄牌记录', (gen2.data?.cards?.length || 0) === (
 ok('生成战报不改动双方名单',
   JSON.stringify(gen2.data?.lineups) === JSON.stringify(before.lineups));
 
-// ---- ④ 战报可以在统一编辑界面里手工改 ----
-const edited = await call('PATCH', `/api/matches/${finished.id}/full`, {
-  token: opToken,
-  body: {
-    teamAId: before.teamA.registrationId,
-    teamBId: before.teamB.registrationId,
-    report: '手工修改后的战报：测试用。',
-  },
-});
+// ---- ④ 战报就在战报弹窗里改（PATCH /matches/:id/report）----
+const edited = await call('PATCH', `/api/matches/${finished.id}/report`,
+  { token: opToken, body: { report: '手工修改后的战报：测试用。' } });
 ok('可以手工修改战报', edited.status === 200
   && edited.data?.report === '手工修改后的战报：测试用。', edited.data?.error || '');
 ok('只改战报时不影响比分', edited.data?.scoreA === before.scoreA);
+const playerEdit = await call('PATCH', `/api/matches/${finished.id}/report`,
+  { token: playerToken, body: { report: '越权修改' } });
+ok('参赛球员修改战报被拒绝(403)', playerEdit.status === 403, `status=${playerEdit.status}`);
+
+// 清空战报算"新的一篇"，可以再生成一次；重新生成次数不会被重置
+const cleared = await call('PATCH', `/api/matches/${finished.id}/report`,
+  { token: adminToken, body: { report: '' } });
+ok('战报可以清空（空即删除）', cleared.status === 200 && cleared.data?.report === '');
+const regenAfterClear = await call('POST', `/api/matches/${finished.id}/report`, { token: adminToken });
+ok('清空之后可以再生成一篇', regenAfterClear.status === 200
+  && regenAfterClear.data?.report?.length > 10, regenAfterClear.data?.error || '');
+ok('重新生成次数不会被重置', regenAfterClear.data?.reportRegenCount === 1,
+  `regenCount=${regenAfterClear.data?.reportRegenCount}`);
+// 再想重新生成仍然被拒（次数已用完）
+const regenAgain = await call('POST', `/api/matches/${finished.id}/report`, { token: adminToken });
+ok('之后仍然不能再重新生成', regenAgain.status === 400, `status=${regenAgain.status}`);
 
 // ---- 收尾：还原 ----
 if (tempResult) {

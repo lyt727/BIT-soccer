@@ -291,14 +291,6 @@ function buildForm(event, state, redraw) {
         onclick: () => addCardRow(cardsBox, {}, teamNamesNow),
       }, '＋ 添加')),
     cardsBox,
-    el('div', { class: 'section-title lv2' }, '战报'),
-    el('div', { class: 'me-note' },
-      '可以先在赛程页点「AI 生成战报」，再在这里手工润色；留空就是没有战报。'),
-    el('label', { class: 'field' },
-      el('span', {}, '战报正文'),
-      el('textarea', {
-        id: 'me-report', rows: 6, placeholder: '（可留空）AI 生成之后会出现在这里，也可以直接手写',
-      }, match.report || '')),
   ];
 
   // ---- ③ 工作人员 ----
@@ -500,7 +492,6 @@ function collect(body, match) {
     assistant2: val('#me-ref-a2'),
     fourthOfficial: val('#me-ref-fourth'),
     specialNote: val('#me-note'),
-    report: val('#me-report'),
     // ② 比赛数据
     scoreA,
     scoreB,

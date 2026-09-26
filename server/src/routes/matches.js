@@ -145,6 +145,7 @@ async function detailsOfMatch(db, m) {
     },
     specialNote: m.special_note || '',
     report: m.report || '',
+    reportRegenCount: Number(m.report_regen_count) || 0,
     refereeList,
     status: m.status,
     scoreA: m.score_a,
@@ -444,8 +445,6 @@ export function registerMatchRoutes(router) {
     if (body.assistant2 !== undefined) next.assistant2 = clip(body.assistant2, 40);
     if (body.fourthOfficial !== undefined) next.fourth_official = clip(body.fourthOfficial, 40);
     if (body.specialNote !== undefined) next.special_note = clip(body.specialNote, 500);
-    // 战报：AI 生成的可以在这里手工修改，全员可见
-    if (body.report !== undefined) next.report = String(body.report).trim().slice(0, 2000);
     if (body.roundName !== undefined) next.round_name = clip(body.roundName, 20);
     // 只有「小组赛+淘汰赛」赛制的小组赛才需要选小组；单循环联赛没有分组
     if (body.groupName !== undefined && (match.stage || 'group') === 'group'
@@ -612,7 +611,9 @@ export function registerMatchRoutes(router) {
   // ---------------- AI 生成战报 ----------------
   // 权限：管理员 / 被指派的数据录入员可生成；参赛队员只读（只能看战报，不能生成）。
   // 未完赛的比赛不允许生成：前端点按钮会先弹窗提示，后端也会拦一道。
-  // 生成结果直接写进 matches.report，全员可见；想手改走「编辑比赛信息」里的战报框。
+  // 生成结果写进 matches.report，全员可见。
+  // 重新生成的次数限制：同一篇战报只允许重新生成一次（report_regen_count 记着），
+  // 把战报清空后再生成算"新的一篇"，不占这个次数。
   router.add('POST', '/api/matches/:id/report', async (req, res, params) => {
     const user = await authUser(req);
     requireAction(user, 'result.record');
@@ -624,10 +625,18 @@ export function registerMatchRoutes(router) {
     if (match.status !== 'finished') {
       throw badRequest('比赛尚未结束，无法生成战报');
     }
+    const hasReport = Boolean(String(match.report || '').trim());
+    const regenCount = Number(match.report_regen_count) || 0;
+    if (hasReport && regenCount >= 1) {
+      throw badRequest('每场比赛只能重新生成一次，本场已经用过了；可以直接修改现有战报');
+    }
     const { text, source, model, fallbackReason } = await generateMatchReport(db, match, event);
-    await db.run('UPDATE matches SET report = ? WHERE id = ?', [text, match.id]);
+    const nextCount = hasReport ? regenCount + 1 : regenCount;
+    await db.run('UPDATE matches SET report = ?, report_regen_count = ? WHERE id = ?',
+      [text, nextCount, match.id]);
     await audit(db, user, 'match.report.generate', 'match', match.id,
       { eventId: match.event_id, source, model: model || '', length: text.length,
+        regenerated: hasReport, regenCount: nextCount,
         fallbackReason: fallbackReason || '' }, clientIp(req));
     const fresh = await db.get('SELECT * FROM matches WHERE id = ?', [match.id]);
     sendJson(res, 200, {
@@ -636,6 +645,24 @@ export function registerMatchRoutes(router) {
       reportModel: source === 'ai' ? model : '',
       reportFallbackReason: fallbackReason || '',
     });
+  });
+
+  // 手工修改战报（AI 生成的可以润色；清空即删除）。权限与生成一致。
+  router.add('PATCH', '/api/matches/:id/report', async (req, res, params) => {
+    const user = await authUser(req);
+    requireAction(user, 'result.record');
+    const db = getDb();
+    const match = await loadMatch(db, params.id);
+    await assertEventScope(db, user, 'result.record', match.event_id);
+    const event = await loadEvent(db, match.event_id);
+    assertEditable(event, user, '比赛数据');
+    const body = await readJson(req);
+    const report = String(body.report ?? '').trim().slice(0, 2000);
+    await db.run('UPDATE matches SET report = ? WHERE id = ?', [report, match.id]);
+    await audit(db, user, 'match.report.edit', 'match', match.id,
+      { eventId: match.event_id, length: report.length }, clientIp(req));
+    const fresh = await db.get('SELECT * FROM matches WHERE id = ?', [match.id]);
+    sendJson(res, 200, await detailsOfMatch(db, fresh));
   });
 
   // ---------------- 比赛结果录入（人工或 AI 复核后提交共用） ----------------
