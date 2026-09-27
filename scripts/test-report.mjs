@@ -37,6 +37,17 @@ async function call(method, path, { token, body } = {}) {
 const login = async (phone) => (await call('POST', '/api/auth/login-password',
   { body: { phone, password: '123456' } })).data?.token;
 
+// ---- ⓪ 纯逻辑：战报文本清洗（主队/客队 → 真实队名；主客场说法一律去掉）----
+const { replaceSideWords } = await import('../server/src/services/matchReport.js');
+const sideFacts = { teamA: '信息与电子学院一队', teamB: '机械与车辆学院二队' };
+const clean = (t) => replaceSideWords(t, sideFacts);
+ok('清洗：主队 → 真实队名', clean('主队率先破门') === '信息与电子学院一队率先破门', clean('主队率先破门'));
+ok('清洗：客队 → 真实队名', clean('客队扳回一城') === '机械与车辆学院二队扳回一城', clean('客队扳回一城'));
+ok('清洗：去掉「坐镇主场」「主场迎战」等说法',
+  !/主队|客队|主场|客场|客战/.test(clean('主队坐镇主场迎战客队，客队客场挑战主队')),
+  clean('主队坐镇主场迎战客队，客队客场挑战主队'));
+ok('清洗：不留重复标点与多余空格', !/[，、；：]\s*[，、；：]|[ \t]{2,}/.test(clean('主队 主场作战、客队客场挑战')));
+
 console.log('【AI 生成战报】');
 const adminToken = await login('13900000001');
 const opToken = await login('13900000003');
@@ -104,6 +115,8 @@ ok('战报包含比分', gen.data?.report?.includes(`${before.scoreA}`)
   && gen.data?.report?.includes(`${before.scoreB}`));
 ok('战报正文不含「主队/客队」，一律用球队名称',
   !gen.data?.report?.includes('主队') && !gen.data?.report?.includes('客队'));
+ok('战报正文不含「主场/客场/客战」等说法（不区分主客场）',
+  !/(主场|客场|客战)/.test(gen.data?.report || ''));
 ok('返回了战报来源（AI 或本地模板）',
   ['ai', 'template'].includes(gen.data?.reportSource), gen.data?.reportSource);
 
