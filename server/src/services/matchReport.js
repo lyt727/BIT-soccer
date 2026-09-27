@@ -23,9 +23,12 @@ const SYSTEM_PROMPT = `你是一名校园足球赛事的战报撰稿人。用户
    也不要写天气、观众人数、补时、伤停这些数据里没有的内容；
 3. 队名、场地、赛事名一律照抄数据里的写法，不要补全或改写
    （数据写"西操场 2 号场"就写"西操场 2 号场"，不要自己加上"北京理工大学"这类前缀）；
-4. 数据缺失时如实回避：进球球员没登记就写"第 23 分钟主队进球"，不要编名字；
-5. 篇幅 120–200 字，1–2 段，语句通顺，不要小标题、不要 Markdown、不要表情符号；
-6. 严禁写需要其他比赛结果才能判断的结论，例如"首胜""提前出线""晋级""保级""锁定头名"
+4. **全文一律直接写球队名称，禁止出现"主队""客队"这两个词**；
+   指的是哪支球队就写哪支球队的名字（例如"第 23 分钟 信息与电子学院一队 进球"）；
+5. 数据缺失时如实回避：进球球员没登记就写"第 23 分钟 <球队名> 进球"，不要编名字；
+6. 双方名单只供你核对人名，**不要罗列首发/替补名单**，也不要逐个念出场球员；
+7. 篇幅 120–200 字，1–2 段，语句通顺，不要小标题、不要 Markdown、不要表情符号；
+8. 严禁写需要其他比赛结果才能判断的结论，例如"首胜""提前出线""晋级""保级""锁定头名"
    —— 数据里没有这些信息，一律不写；结尾只需点明胜负或平局即可。
 
 只输出战报正文本身。`;
@@ -133,7 +136,8 @@ function factsToText(f) {
   const lines = [
     `赛事：${f.eventName || '未填写'}${f.stage ? `（${f.stage}）` : ''}`,
     f.date || f.venue ? `时间地点：${[f.date, f.venue].filter(Boolean).join(' ')}` : '',
-    `对阵：${f.teamA}（主队） vs ${f.teamB}（客队）`,
+    // 不写"主队/客队"字样，避免模型直接抄进正文；直接给两个队名
+    `对阵：${f.teamA} vs ${f.teamB}`,
     `比分：${f.teamA} ${f.scoreA} : ${f.scoreB} ${f.teamB}`,
     f.goals.length
       ? `进球：${f.goals.map((g) => `${g.time || '时间未登记'} ${g.no ? `${g.no} 号 ` : ''}`
@@ -153,6 +157,14 @@ function factsToText(f) {
 }
 
 // ---------- AI 版 ----------
+// 兜底：万一模型还是写了"主队/客队"，机械替换成真实队名。
+// 主队=teamA、客队=teamB 是我们在数据里定义死的，替换不会歧义。
+function replaceSideWords(text, f) {
+  return String(text || '')
+    .replace(/主队/g, f.teamA)
+    .replace(/客队/g, f.teamB);
+}
+
 async function callTextModel(f) {
   const res = await fetch(`${config.aiVisionBaseUrl.replace(/\/$/, '')}/chat/completions`, {
     method: 'POST',
@@ -178,7 +190,7 @@ async function callTextModel(f) {
   }
   const text = String(data?.choices?.[0]?.message?.content || '').trim();
   if (!text) throw new Error('文本模型没有返回内容');
-  return text;
+  return replaceSideWords(text, f);
 }
 
 export function aiTextEnabled() {

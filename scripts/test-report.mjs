@@ -102,6 +102,8 @@ ok('战报包含双方队名',
   gen.data?.report?.includes(before.teamA.name) && gen.data?.report?.includes(before.teamB.name));
 ok('战报包含比分', gen.data?.report?.includes(`${before.scoreA}`)
   && gen.data?.report?.includes(`${before.scoreB}`));
+ok('战报正文不含「主队/客队」，一律用球队名称',
+  !gen.data?.report?.includes('主队') && !gen.data?.report?.includes('客队'));
 ok('返回了战报来源（AI 或本地模板）',
   ['ai', 'template'].includes(gen.data?.reportSource), gen.data?.reportSource);
 
