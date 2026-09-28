@@ -172,8 +172,7 @@ class PgStore {
   }
 
   async migrate() {
-    // 云库正式 DDL（database/schema.sql）建议通过 CI 迁移执行，
-    // 见 docs/云数据库方案.md
+    // 云库正式 DDL（database/schema.sql）建议通过 CI 迁移执行
   }
 }
 
